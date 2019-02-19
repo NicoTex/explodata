@@ -2,13 +2,17 @@
 title: "explodata"
 author: "Texier-Dauby"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
-output: html_document
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
-```{r load-packages, echo=FALSE}
+
+```{r load-packages, echo=FALSE, }
 library(tidyverse)
 library(rdrop2)
 ```
