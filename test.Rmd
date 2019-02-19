@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```{r load-packages, echo=FALSE, }
 library(tidyverse)
 library(rdrop2)
+library(ggrepel)
 ```
 
 ```{r dropbox-init, echo=FALSE, eval=FALSE}
@@ -25,33 +26,154 @@ saveRDS(token, file = "token.rds")
 ```
 
 ```{r download-data-dropbox, eval=FALSE, echo=FALSE}
-drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.xlsx", overwrite =TRUE)
+drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.xlsx", overwrite = TRUE)
+drop_download("gilles_nico_tex/Gabon_Endemics_species_19022019.xlsx", overwrite = TRUE)
+drop_download("gilles_nico_tex/Gabon_full_2018.xlsx", overwrite = TRUE)
 ```
 
+```{r dropbox_load, echo=FALSE}
 
-```{r dropbox_load}
-
-# Load dataset from dropbox
-
-
+#### Load dataset from dropbox
 
 # dataset <- 
 #   drop_read_csv("gilles_nico_tex/EOO.results.csv") %>% 
 #   as_tibble()
 
+
+## Data specimen
 dataset <- readxl::read_excel("Selection_specimen_GAB_end_19022019.xlsx")
 
+# Transform  georeferencement data as numeric data
+dataset <- dataset %>% 
+  mutate (LatitudeDecimal = as.numeric(LatitudeDecimal), LongitudeDecimal = as.numeric(LongitudeDecimal))
+
+
+## Data species
+species <- readxl::read_excel("Gabon_Endemics_species_19022019.xlsx")
+
+
+## Data full Gabon (tous les spécimens du Gabon)
+full_gabon <- readxl::read_excel("Gabon_full_2018.xlsx")
 ```
 
 
+## Basic statistics
+```{r extreme_coord, eval=FALSE, include=FALSE}
+
+#### Check extreme coordinates
+
+check <- select(dataset, ID, LatitudeDecimal, LongitudeDecimal)
+arrange(check, LatitudeDecimal)
+arrange(check, desc(LatitudeDecimal))
+arrange(check, LongitudeDecimal)
+arrange(check, desc(LongitudeDecimal))
 
 
-## Including Plots
+## Find a row with specific value
 
-You can also embed plots, for example:
+# which(grepl(166987, data$ID)) # quelle ligne a l'ID=166987
+# data <- data[!(data$ID=="166987"),] # enlever une certaine ligne selon sa valeur dans une variable/colonne
 
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r nb_specimens, echo=FALSE}
+
+#### Specimen number by species
+
+nb_occ_tot <- dataset %>% 
+  count (NameNoAuthors) %>%  # compte le nombre de specimens par espece
+  rename(Tot = n) # renomme la colonne "n" en "Tot"
+
+# Avec condition
+nb_occ_crit <- dataset %>% 
+  filter (grepl("Klaine", CollectorString)) %>% # lignes qui ont comme collecteur "Klaine"
+  count (NameNoAuthors) %>%  # nb de specimen par espece avec cette condition
+  rename("Klaine" = n)
+
+result_crit <- inner_join (nb_occ_tot, nb_occ_crit, by="NameNoAuthors")
+
+
+## Plot nb especes en fonction nb de specimens
+# Choix des limites de regroupement (nb de spécimens)
+nb_gp <- nb_occ_tot %>% summarise (g1=sum(Tot==1), g2=sum(Tot>=2 & Tot<=5), g3=sum(Tot>5 & Tot<=10), g4=sum(Tot>10 & Tot<=30), g5=sum(Tot>30))
+gp <- tibble(Nb_spec=c("1","2-5","6-10","10-30",">30"),Nb_esp=unlist(c(nb_gp[,1:5])))
+gp <- gp %>% 
+  mutate(Perc= round(Nb_esp/sum(Nb_esp)*100,1))
+
+# Plot
+gp$Nb_spec <- factor (gp$Nb_spec, levels=c("1","2-5","6-10","10-30",">30")) # obliger de mettre cette donnee en facteur pour que ggplot prenne en compte cet ordre de donnees pour ploter
+ggplot(data=gp,aes(x=Nb_spec,y=Nb_esp)) + geom_bar(stat="identity") + geom_text(aes(label=paste(Perc,"%",sep=" ")),vjust=1.6,color="white")
+
+```
+
+
+```{r habitus_RB, eval=FALSE, include=FALSE}
+
+#### Species habitus according to Rainbio data
+
+habit_RB<-dataset %>% 
+  filter (!is.na(`Ecological LifeForm`)) %>% 
+  group_by(NameNoAuthors) %>%
+  distinct(`Ecological LifeForm`)
+
+nb_habit_RB <- habit_RB %>% 
+  group_by(NameNoAuthors) %>%
+  summarise(n = n_distinct(`Ecological LifeForm`))
+
+habit_unique <- nb_habit_RB %>% 
+  filter (n == 1) # to select data that have only one type of habitus in Rainbio data
+
+Habitus <- habit_RB [habit_RB$NameNoAuthors %in% habit_unique$NameNoAuthors,]
+
+# write.csv(Habitus,"C:/Users/Administrateur/Desktop/Habitus_species_RB.csv")
+```
+
+
+```{r habitus_stat, echo = FALSE}
+
+# From dataset "species", from endemic species
+
+#### Proportion of different habitus in the dataset for endemics
+
+habit_prop <- species %>% 
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>% # select endemic species
+  count (`Habitus 1`) %>% # nb of each habitus
+  mutate(prop= round(n/sum(n)*100,1)) # % of each habitus
+
+theme_pie <- theme(panel.background = element_blank(), axis.title = element_blank(), axis.text = element_blank())
+
+ggplot (data=habit_prop, aes(x="", y=prop,  fill=`Habitus 1`)) + geom_bar(stat="identity") + coord_polar(theta = "y") + geom_label_repel(aes(label = prop), size=5, show.legend = F, nudge_x = 1) + guides(fill = guide_legend(title = "Group")) + theme_pie
+
+```
+
+
+```{r taxo_stat, echo = FALSE}
+
+#### Most representative taxon within endemics
+
+end_fam_prop <- species %>% 
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>% # select endemic species
+  count (FAMILY) %>% 
+  arrange(-n) # sort by decreasing order
+
+end_gen_prop <- species %>% 
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>%
+  count (GENUS) %>% 
+  arrange(-n)
+
+# faire un ggplot avec les familles/genres peu réprésentées groupées ensemble
+
+#### Proportion of endemic per family and per genus in Gabon
+
+full_gab_fam_prop <- full_gabon %>%
+  count (tax_fam) %>% 
+  arrange(-n)
+
+
+full_gab_gen_prop <- full_gabon %>%
+  count (tax_gen) %>% 
+  arrange(-n)
+
+```
+
