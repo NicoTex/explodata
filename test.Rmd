@@ -19,6 +19,14 @@ token <- drop_auth()
 saveRDS(token, file = "token.rds")
 
 
+drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.xlsx")
+
+# dataset <- 
+#   drop_read_csv("gilles_nico_tex/EOO.results.csv") %>% 
+#   as_tibble()
+
+dataset <- readxl::read_excel("Selection_specimen_GAB_end_19022019.xlsx")
+
 ```
 
 
