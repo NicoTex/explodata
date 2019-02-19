@@ -8,21 +8,28 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
-```{r dropbox}
-
-# Load dataset from dropbox
-
+```{r load-packages, echo=FALSE}
 library(tidyverse)
 library(rdrop2)
+```
+
+```{r dropbox-init, echo=FALSE, eval=FALSE}
 drop_auth()
-
-
 token <- drop_auth()
 saveRDS(token, file = "token.rds")
 
+```
 
-drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.xlsx")
+```{r download-data-dropbox, eval=FALSE, echo=FALSE}
+drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.xlsx", overwrite =TRUE)
+```
+
+
+```{r dropbox_load}
+
+# Load dataset from dropbox
+
+
 
 # dataset <- 
 #   drop_read_csv("gilles_nico_tex/EOO.results.csv") %>% 
