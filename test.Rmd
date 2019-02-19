@@ -1,7 +1,7 @@
 ---
 title: "explodata"
 author: "Texier-Dauby"
-date: "19 février 2019"
+date: `r format(Sys.time(), "%d %B, %Y")`
 output: html_document
 ---
 
