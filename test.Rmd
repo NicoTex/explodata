@@ -9,9 +9,15 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+```{r dropbox}
+library(tidyverse)
+library(rdrop2)
+drop_auth()
 
-```{r}
+
+token <- drop_auth()
+saveRDS(token, file = "token.rds")
+
 
 ```
 
