@@ -9,16 +9,19 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 ```
 
-```{r load-packages, echo=FALSE, }
+```{r load-packages}
+
 library(tidyverse)
 library(rdrop2)
 library(ggrepel)
+
 ```
 
-```{r dropbox-init, echo=FALSE, eval=FALSE}
+```{r dropbox-init}
+
 drop_auth()
 token <- drop_auth()
 saveRDS(token, file = "token.rds")
@@ -27,11 +30,12 @@ saveRDS(token, file = "token.rds")
 
 ```{r download-data-dropbox, eval=FALSE, echo=FALSE}
 drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.xlsx", overwrite = TRUE)
+drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.csv", overwrite = TRUE)
 drop_download("gilles_nico_tex/Gabon_Endemics_species_19022019.xlsx", overwrite = TRUE)
 drop_download("gilles_nico_tex/Gabon_full_2018.xlsx", overwrite = TRUE)
 ```
 
-```{r dropbox_load, echo=FALSE}
+```{r dropbox_load}
 
 #### Load dataset from dropbox
 
@@ -41,7 +45,13 @@ drop_download("gilles_nico_tex/Gabon_full_2018.xlsx", overwrite = TRUE)
 
 
 ## Data specimen
-dataset <- readxl::read_excel("Selection_specimen_GAB_end_19022019.xlsx")
+# dataset <- 
+#   readxl::read_excel("Selection_specimen_GAB_end_19022019.xlsx", col_types = 
+#                                 c("numeric","numeric","numeric","numeric"))
+dataset <- 
+  read_csv2("Selection_specimen_GAB_end_19022019.csv", col_types = 
+              list(IDGBIF = col_double(),
+                   ))
 
 # Transform  georeferencement data as numeric data
 dataset <- dataset %>% 
