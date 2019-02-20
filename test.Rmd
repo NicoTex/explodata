@@ -54,6 +54,9 @@ species <- readxl::read_excel("Gabon_Endemics_species_19022019.xlsx")
 
 ## Data full Gabon (tous les spécimens du Gabon)
 full_gabon <- readxl::read_excel("Gabon_full_2018.xlsx")
+
+full_gabon <- full_gabon %>% 
+  mutate (ddlat = as.numeric(ddlat), ddlon = as.numeric(ddlon))
 ```
 
 
@@ -164,13 +167,26 @@ end_gen_prop <- species %>%
 
 # faire un ggplot avec les familles/genres peu réprésentées groupées ensemble
 
+
 #### Proportion of endemic per family and per genus in Gabon
 
+# Family
 full_gab_fam_prop <- full_gabon %>%
+  filter (tax_esp != "###") %>% # remove specimens not identified at species level
+  
+  
   count (tax_fam) %>% 
-  arrange(-n)
+  arrange(-n) %>% 
+  rename("FAMILY" = tax_fam)
+  
 
+end_fam_prop <- end_fam_prop %>% 
+  left_join(end_fam_prop, full_gab_fam_prop, by= "FAMILY") %>% 
+  rename ("n_end" = n.x) %>% 
+  rename ("n_gab" = n.y) %>% 
+  mutate (prop = round(n_end/n_gab)*100,1)
 
+# Genus
 full_gab_gen_prop <- full_gabon %>%
   count (tax_gen) %>% 
   arrange(-n)
