@@ -49,17 +49,43 @@ drop_download("gilles_nico_tex/Gabon_full_2018.xlsx", overwrite = TRUE)
 #   readxl::read_excel("Selection_specimen_GAB_end_19022019.xlsx", col_types = 
 #                                 c("numeric","numeric","numeric","numeric"))
 dataset <- 
-  read_csv2("Selection_specimen_GAB_end_19022019.csv", col_types = 
+  read_csv("Selection_specimen_GAB_end_19022019.csv", col_types = 
               list(IDGBIF = col_double(),
+                   SameAs = col_character(),
+                   LatitudeDecimal = col_double(),
+                   LongitudeDecimal = col_double(),
+                   AccuracyGBIF = col_character(),
+                   AccuracyDroissart = col_double(),
+                   Accuracy = col_double(),
+                   Kept_analysis = col_character(),
+                   Updated_data_Trop = col_character(),
+                   LowerName = col_character(),
+                   `Maximum Day` = col_double(),
+                   `Maximum Month` = col_double(),
+                   `Maximum Year` = col_double(),
+                   `Ecological Habitat` = col_character(),
+                   `Ecological Substrate` = col_character(),
+                   `Ecological Seasonality` = col_character(),
+                   `Ecological Site` = col_character(),
+                   ChildHerbNb = col_character(),
+                   `Uploaded Trop` = col_character(),
+                   DeterminationYear = col_character()
                    ))
 
-# Transform  georeferencement data as numeric data
-dataset <- dataset %>% 
-  mutate (LatitudeDecimal = as.numeric(LatitudeDecimal), LongitudeDecimal = as.numeric(LongitudeDecimal))
+## field with problems in importation
+problems(dataset) %>% 
+  distinct(col)
 
+problems(dataset) %>% 
+  filter(col=="MinimumElevation") %>% 
+  distinct(actual)
+
+problems(dataset) %>% 
+  filter(col=="DeterminationYear")
 
 ## Data species
-species <- readxl::read_excel("Gabon_Endemics_species_19022019.xlsx")
+species <- 
+  readxl::read_excel("Gabon_Endemics_species_19022019.xlsx")
 
 
 ## Data full Gabon (tous les spécimens du Gabon)
