@@ -29,10 +29,9 @@ saveRDS(token, file = "token.rds")
 ```
 
 ```{r download-data-dropbox, eval=FALSE, echo=FALSE}
-drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.xlsx", overwrite = TRUE)
 drop_download("gilles_nico_tex/Selection_specimen_GAB_end_19022019.csv", overwrite = TRUE)
-drop_download("gilles_nico_tex/Gabon_Endemics_species_19022019.xlsx", overwrite = TRUE)
-drop_download("gilles_nico_tex/Gabon_full_2018.xlsx", overwrite = TRUE)
+drop_download("gilles_nico_tex/Gabon_Endemics_species_19022019.csv", overwrite = TRUE)
+drop_download("gilles_nico_tex/Gabon_full_2018.csv", overwrite = TRUE)
 ```
 
 ```{r dropbox_load}
@@ -44,10 +43,8 @@ drop_download("gilles_nico_tex/Gabon_full_2018.xlsx", overwrite = TRUE)
 #   as_tibble()
 
 
-## Data specimen
-# dataset <- 
-#   readxl::read_excel("Selection_specimen_GAB_end_19022019.xlsx", col_types = 
-#                                 c("numeric","numeric","numeric","numeric"))
+### Data specimen (tous les spécimens des espèces endémiques du Gabon)
+
 dataset <- 
   read_csv("Selection_specimen_GAB_end_19022019.csv", col_types = 
               list(IDGBIF = col_double(),
@@ -72,27 +69,39 @@ dataset <-
                    DeterminationYear = col_character()
                    ))
 
-## field with problems in importation
+# field with problems in importation
 problems(dataset) %>% 
   distinct(col)
 
-problems(dataset) %>% 
-  filter(col=="MinimumElevation") %>% 
-  distinct(actual)
+# problems(dataset) %>% 
+#   filter(col=="MinimumElevation") %>% 
+#   distinct(actual)
+# 
+# problems(dataset) %>% 
+#   filter(col=="DeterminationYear")
 
-problems(dataset) %>% 
-  filter(col=="DeterminationYear")
 
-## Data species
+
+### Data species (metadata sur les espèces endémiques du Gabon)
+
 species <- 
-  readxl::read_excel("Gabon_Endemics_species_19022019.xlsx")
+  read_csv("Gabon_Endemics_species_19022019.csv")
+
+problems(species) %>% 
+  distinct(col)
 
 
-## Data full Gabon (tous les spécimens du Gabon)
-full_gabon <- readxl::read_excel("Gabon_full_2018.xlsx")
 
-full_gabon <- full_gabon %>% 
-  mutate (ddlat = as.numeric(ddlat), ddlon = as.numeric(ddlon))
+### Data full Gabon (tous les spécimens du Gabon)
+full_gabon <- 
+  read_csv("Gabon_full_2018.csv", col_types = 
+              list(ddlat = col_double(),
+                   ddlon = col_double(),
+                   nbr = col_character()
+                   ))
+
+problems(full_gabon) %>% 
+  distinct(col)
 ```
 
 
@@ -142,7 +151,7 @@ gp <- gp %>%
 
 # Plot
 gp$Nb_spec <- factor (gp$Nb_spec, levels=c("1","2-5","6-10","10-30",">30")) # obliger de mettre cette donnee en facteur pour que ggplot prenne en compte cet ordre de donnees pour ploter
-ggplot(data=gp,aes(x=Nb_spec,y=Nb_esp)) + geom_bar(stat="identity") + geom_text(aes(label=paste(Perc,"%",sep=" ")),vjust=1.6,color="white")
+ggplot(data=gp,aes(x=Nb_spec,y=Nb_esp)) + geom_bar(stat="identity") + geom_text(aes(label=paste(Perc,"%",sep=" ")),vjust=1.6,color="white") + xlab("Number of specimens") + ylab("Number of species")
 
 ```
 
@@ -178,54 +187,106 @@ Habitus <- habit_RB [habit_RB$NameNoAuthors %in% habit_unique$NameNoAuthors,]
 habit_prop <- species %>% 
   filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>% # select endemic species
   count (`Habitus 1`) %>% # nb of each habitus
-  mutate(prop= round(n/sum(n)*100,1)) # % of each habitus
+  mutate(prop= round(n/sum(n)*100,1))  # % of each habitus
 
-theme_pie <- theme(panel.background = element_blank(), axis.title = element_blank(), axis.text = element_blank())
 
-ggplot (data=habit_prop, aes(x="", y=prop,  fill=`Habitus 1`)) + geom_bar(stat="identity") + coord_polar(theta = "y") + geom_label_repel(aes(label = prop), size=5, show.legend = F, nudge_x = 1) + guides(fill = guide_legend(title = "Group")) + theme_pie
+ggplot (data=habit_prop, aes(x=reorder(`Habitus 1`,prop), y=prop)) + geom_bar(stat="identity") + coord_flip() + geom_text(aes(label=paste(prop,"%",sep=" ")), vjust=0.5, hjust=1.2, color="white") + xlab("Habitus") + ylab("Proportion (%)") # reorder allows to sort by a numeric variable
+
+
+## Representation in a pie chart
+#theme_pie <- theme(panel.background = element_blank(), axis.title = element_blank(), axis.text = element_blank())
+
+#ggplot (data=habit_prop, aes(x="", y=prop,  fill=`Habitus 1`)) + geom_bar(stat="identity") + coord_polar(theta = "y") + geom_label_repel(aes(label = prop), size=5, show.legend = F, nudge_x = 1) + guides(fill = guide_legend(title = "Group")) + theme_pie
 
 ```
 
 
 ```{r taxo_stat, echo = FALSE}
 
-#### Most representative taxon within endemics
+#### Most representative taxon within endemics and proportion within Gabonese flora
 
-end_fam_prop <- species %>% 
+## Family
+
+end_fam_nb <- species %>% # calculate nb of species per family within endemics
   filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>% # select endemic species
   count (FAMILY) %>% 
+  mutate (n = as.numeric (n)) %>% 
   arrange(-n) # sort by decreasing order
 
-end_gen_prop <- species %>% 
-  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>%
-  count (GENUS) %>% 
-  arrange(-n)
 
-# faire un ggplot avec les familles/genres peu réprésentées groupées ensemble
-
-
-#### Proportion of endemic per family and per genus in Gabon
-
-# Family
-full_gab_fam_prop <- full_gabon %>%
+full_gab_fam_nb <- full_gabon %>% # calculate nb of species per family within Gabonese flora
   filter (tax_esp != "###") %>% # remove specimens not identified at species level
-  
-  
-  count (tax_fam) %>% 
+  distinct (tax_tax, tax_fam) %>%  # all taxa with associated family
+  count (tax_fam) %>% # count for number of taxon in each family
+  mutate (n = as.numeric (n)) %>%
   arrange(-n) %>% 
   rename("FAMILY" = tax_fam)
-  
 
-end_fam_prop <- end_fam_prop %>% 
-  left_join(end_fam_prop, full_gab_fam_prop, by= "FAMILY") %>% 
+
+end_fam_prop <- left_join(end_fam_nb, full_gab_fam_prop, by= "FAMILY") %>%  # calculate proportion of endemic species within each family in Gabon
   rename ("n_end" = n.x) %>% 
   rename ("n_gab" = n.y) %>% 
-  mutate (prop = round(n_end/n_gab)*100,1)
+  mutate (prop = round(n_end/n_gab*100,1)) %>% 
+  arrange (-prop)
 
-# Genus
-full_gab_gen_prop <- full_gabon %>%
-  count (tax_gen) %>% 
+
+# Plot - Most represented families in endemics
+
+X = 10 # Treshold of species'number for a family to be represented in the graph
+
+fam_low <- end_fam_nb %>% # Calculate nb of families with less than X species
+  filter (n<X) %>%
+  summarise ("n" = sum(n)) %>%
+  add_column("FAMILY" = "Others families") %>% 
+  select (FAMILY,everything()) # order column
+  
+end_fam <- end_fam_nb %>% # Recap tible with families more than X species
+  filter (n>X) %>% 
+  rbind(fam_low) %>% 
+  mutate (prop=round(n/sum(n)*100,1))
+
+ggplot(data=end_fam, aes(x=reorder(FAMILY,-`n`), y=`n`)) + geom_bar(stat="identity") + xlab("Families") + ylab("Species number") + geom_text(aes(label=paste(prop,"%",sep=" ")), vjust=1.6, color="white") + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
+
+# Plot - Most represented families in endemics compare to Gabonese flora
+
+X = 20 # The top X families with most proportion of endemic will be dispayed
+ggplot(data=end_fam_prop %>% top_n(X), aes(x=reorder(FAMILY,-prop), y=prop)) + geom_bar(stat="identity") + xlab("Families") + ylab("Proportion") + geom_text(aes(label=n_end), vjust=1.6, color="white") + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
+
+
+## Genus
+
+end_gen_nb <- species %>% 
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>%
+  count (GENUS) %>%
+  mutate (n = as.numeric (n)) %>%
   arrange(-n)
 
+
+full_gab_gen_nb <- full_gabon %>%
+  filter (tax_esp != "###") %>% # remove specimens not identified at species level
+  distinct (tax_tax, tax_gen) %>%  # all taxa with associated family
+  count (tax_gen) %>% # count for number of taxon in each family
+  mutate (n = as.numeric (n)) %>%
+  arrange(-n) %>% 
+  rename("GENUS" = tax_gen)
+
+
+end_gen_prop <- left_join(end_gen_nb, full_gab_gen_prop, by= "GENUS") %>%  # add result of full_gab in result of endemic
+  rename ("n_end" = n.x) %>% 
+  rename ("n_gab" = n.y) %>% 
+  mutate (prop = round(n_end/n_gab*100,1)) %>% 
+  arrange (-prop)
+
 ```
+
+
+```{r threatened stat habitus, echo = FALSE}
+
+# Pour chaque statut de conservation (CR, EN, VU) calculer le % de chaque habitus -> % de chaque statut et à l'intérieur % des habitus
+
+
+```
+
 
