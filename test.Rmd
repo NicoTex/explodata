@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 
 library(tidyverse)
 library(rdrop2)
+library(knitr)
 library(ggrepel)
 
 ```
@@ -34,7 +35,7 @@ drop_download("gilles_nico_tex/Gabon_Endemics_species_19022019.csv", overwrite =
 drop_download("gilles_nico_tex/Gabon_full_2018.csv", overwrite = TRUE)
 ```
 
-```{r dropbox_load}
+```{r dropbox_load, include=FALSE}
 
 #### Load dataset from dropbox
 
@@ -69,16 +70,16 @@ dataset <-
                    DeterminationYear = col_character()
                    ))
 
-# field with problems in importation
-problems(dataset) %>% 
+## field with problems in importation
+problems(dataset) %>%
   distinct(col)
 
-# problems(dataset) %>% 
-#   filter(col=="MinimumElevation") %>% 
-#   distinct(actual)
-# 
-# problems(dataset) %>% 
-#   filter(col=="DeterminationYear")
+problems(dataset) %>%
+  filter(col=="MinimumElevation") %>%
+  distinct(actual)
+
+problems(dataset) %>%
+  filter(col=="DeterminationYear")
 
 
 
@@ -87,9 +88,8 @@ problems(dataset) %>%
 species <- 
   read_csv("Gabon_Endemics_species_19022019.csv")
 
-problems(species) %>% 
+problems(species) %>%
   distinct(col)
-
 
 
 ### Data full Gabon (tous les spÃ©cimens du Gabon)
@@ -100,12 +100,12 @@ full_gabon <-
                    nbr = col_character()
                    ))
 
-problems(full_gabon) %>% 
-  distinct(col)
+problems(full_gabon) %>%
+ distinct(col)
 ```
 
 
-## Basic statistics
+
 ```{r extreme_coord, eval=FALSE, include=FALSE}
 
 #### Check extreme coordinates
@@ -125,6 +125,36 @@ arrange(check, desc(LongitudeDecimal))
 ```
 
 
+# Gabonese plant endemism analyse
+```{r species table, echo= FALSE}
+
+## Endemic species with specimen list
+end_esp_anal <- species %>%
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9) # select strict (1) and likely (9) endemic species data with verified specimen list
+
+
+# prévoir d'enlever les ined ! + de mettre les noms updatés (Name New) #
+
+
+#### Strict and likely endemic species
+
+end_esp_all <- species %>%
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9 | (END_checklist==1 & END_BDDEndemix==2)) %>%
+  mutate ("Endemism status"= if_else(END_BDDEndemix==1, 1, if_else(END_BDDEndemix==9, 2, 3))) %>% 
+  select ("Endemism status", FAMILY, SPECIES, UICN_cat_final) %>%
+  rename ("IUCN cat" = UICN_cat_final) %>% 
+  arrange (FAMILY, SPECIES)
+
+# Table
+options(knitr.kable.NA = '')
+kable(end_esp_all, caption = "Table 1: Endemic species of Gabon with preliminary conservation status. Endemism status: 1.Strict endemic; 2.Likely endemic; 3.Checklist endemic")
+
+  
+  
+```
+
+
+Plot 1 : Nombre de spécimen d'herbiers par espèce endémique
 ```{r nb_specimens, echo=FALSE}
 
 #### Specimen number by species
@@ -156,6 +186,7 @@ ggplot(data=gp,aes(x=Nb_spec,y=Nb_esp)) + geom_bar(stat="identity") + geom_text(
 ```
 
 
+
 ```{r habitus_RB, eval=FALSE, include=FALSE}
 
 #### Species habitus according to Rainbio data
@@ -178,14 +209,14 @@ Habitus <- habit_RB [habit_RB$NameNoAuthors %in% habit_unique$NameNoAuthors,]
 ```
 
 
+Plot 2 : Proportion des habitus chez espèces endémiques
 ```{r habitus_stat, echo = FALSE}
 
 # From dataset "species", from endemic species
 
 #### Proportion of different habitus in the dataset for endemics
 
-habit_prop <- species %>% 
-  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>% # select endemic species
+habit_prop <- end_esp_anal %>% 
   count (`Habitus 1`) %>% # nb of each habitus
   mutate(prop= round(n/sum(n)*100,1))  # % of each habitus
 
@@ -201,14 +232,16 @@ ggplot (data=habit_prop, aes(x=reorder(`Habitus 1`,prop), y=prop)) + geom_bar(st
 ```
 
 
+Plot 3: Proportion des familles chez espèces endémiques
+Plot 4: Famille ayant le plus de % d'espèces endémique (avec nombre d'espèce endémique indiqué)
+Plot 5: Genres les plus représentés chez espèces endémiques
 ```{r taxo_stat, echo = FALSE}
 
 #### Most representative taxon within endemics and proportion within Gabonese flora
 
 ## Family
 
-end_fam_nb <- species %>% # calculate nb of species per family within endemics
-  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>% # select endemic species
+end_fam_nb <- end_esp_anal %>% # calculate nb of species per family within endemics
   count (FAMILY) %>% 
   mutate (n = as.numeric (n)) %>% 
   arrange(-n) # sort by decreasing order
@@ -223,7 +256,7 @@ full_gab_fam_nb <- full_gabon %>% # calculate nb of species per family within Ga
   rename("FAMILY" = tax_fam)
 
 
-end_fam_prop <- left_join(end_fam_nb, full_gab_fam_prop, by= "FAMILY") %>%  # calculate proportion of endemic species within each family in Gabon
+end_fam_prop <- left_join(end_fam_nb, full_gab_fam_nb, by= "FAMILY") %>%  # calculate proportion of endemic species within each family in Gabon
   rename ("n_end" = n.x) %>% 
   rename ("n_gab" = n.y) %>% 
   mutate (prop = round(n_end/n_gab*100,1)) %>% 
@@ -232,7 +265,7 @@ end_fam_prop <- left_join(end_fam_nb, full_gab_fam_prop, by= "FAMILY") %>%  # ca
 
 # Plot - Most represented families in endemics
 
-X = 10 # Treshold of species'number for a family to be represented in the graph
+X = 10 # Treshold of species number for a family to be represented in the graph
 
 fam_low <- end_fam_nb %>% # Calculate nb of families with less than X species
   filter (n<X) %>%
@@ -257,8 +290,7 @@ ggplot(data=end_fam_prop %>% top_n(X), aes(x=reorder(FAMILY,-prop), y=prop)) + g
 
 ## Genus
 
-end_gen_nb <- species %>% 
-  filter (END_BDDEndemix==1 | END_BDDEndemix==9) %>%
+end_gen_nb <- end_esp_anal %>% 
   count (GENUS) %>%
   mutate (n = as.numeric (n)) %>%
   arrange(-n)
@@ -273,19 +305,57 @@ full_gab_gen_nb <- full_gabon %>%
   rename("GENUS" = tax_gen)
 
 
-end_gen_prop <- left_join(end_gen_nb, full_gab_gen_prop, by= "GENUS") %>%  # add result of full_gab in result of endemic
+end_gen_prop <- left_join(end_gen_nb, full_gab_gen_nb, by= "GENUS") %>%  # add result of full_gab in result of endemic
   rename ("n_end" = n.x) %>% 
   rename ("n_gab" = n.y) %>% 
   mutate (prop = round(n_end/n_gab*100,1)) %>% 
   arrange (-prop)
 
+
+# Plot - Most represented genera in endemics
+
+X = 10 # The top X most represented genera (in terms of species number) in endemics
+
+gen_low <- end_gen_nb %>% # Calculate nb of families with less than X species
+  top_n(-X) %>%
+  summarise ("n" = sum(n)) %>%
+  add_column("GENUS" = "Others genera") %>% 
+  select (GENUS,everything()) # order column
+  
+end_gen <- end_gen_nb %>% # Recap tible with families more than X species
+  top_n(X) %>% 
+  rbind(gen_low) %>% 
+  mutate (prop=round(n/sum(n)*100,1))
+
+
+ggplot(data=end_gen, aes(x=reorder(GENUS,-n), y=n)) + geom_bar(stat="identity") + xlab("Genera") + ylab("Species number") + geom_text(aes(label=paste(round(n/sum(n)*100,1),"%",sep=" ")), vjust=1.6, color="white") + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
+
 ```
 
 
-```{r threatened stat habitus, echo = FALSE}
+Plot 6: Proportion des catégories UICN chez espèces endémiques
+Plot 7: Proportion des habitus dans catégories UICN des espèces endémiques
+```{r threatened stat, echo = FALSE}
 
-# Pour chaque statut de conservation (CR, EN, VU) calculer le % de chaque habitus -> % de chaque statut et Ã  l'intÃ©rieur % des habitus
+#### IUCN categories
 
+IUCN_cat_prop <- end_esp_anal %>% 
+  count (UICN_cat_final) %>% # nb of each habitus
+  mutate(prop= round(n/sum(n)*100,1)) %>% 
+  rename ("IUCN_cat" = UICN_cat_final)
+
+IUCN_cat_prop$IUCN_cat <- factor (IUCN_cat_prop$IUCN_cat, levels=c("EX","CR","EN","VU","NT","LC","DD")) # obliger de mettre cette donnee en facteur pour que ggplot prenne en compte cet ordre de donnees pour ploter
+ggplot(data=IUCN_cat_prop, aes(x=IUCN_cat, y=`n`)) + geom_bar(stat="identity") + xlab("IUCN categries") + ylab("Species number") + geom_text(aes(label=paste(prop,"%",sep=" ")), vjust=1.6, color="white") + geom_vline(xintercept=4.5, linetype="dashed", size= 1)
+
+
+
+#### IUCN categories + habitus
+
+# source("D:/WORK/THESIS/RAINBIO_exploration/explodata/Function_label_position_fill.R")
+
+ggplot(data=end_esp_anal, aes(x= factor(UICN_cat_final, levels=c("EX","CR","EN","VU","NT","LC","DD")), fill=`Habitus 1`)) + geom_bar(stat="count") + xlab("IUCN categries") + ylab("Species number") + geom_vline(xintercept=4.5, linetype="dashed", size= 1) + guides(fill=guide_legend(title="Habitus"))
+#stat_fill_labels(position = position_stack(vjust = 50))
 
 ```
 
