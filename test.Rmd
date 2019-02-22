@@ -17,6 +17,7 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 library(tidyverse)
 library(rdrop2)
 library(knitr)
+library(sf)
 library(ggrepel)
 
 ```
@@ -35,7 +36,7 @@ drop_download("gilles_nico_tex/Gabon_Endemics_species_19022019.csv", overwrite =
 drop_download("gilles_nico_tex/Gabon_full_2018.csv", overwrite = TRUE)
 ```
 
-```{r dropbox_load, include=FALSE}
+```{r dropbox load, include=FALSE}
 
 #### Load dataset from dropbox
 
@@ -91,6 +92,9 @@ species <-
 problems(species) %>%
   distinct(col)
 
+species <- species %>% 
+  rename ("IUCN_cat" = UICN_cat_final)
+
 
 ### Data full Gabon (tous les spÃ©cimens du Gabon)
 full_gabon <- 
@@ -102,11 +106,23 @@ full_gabon <-
 
 problems(full_gabon) %>%
  distinct(col)
+
+```
+
+
+```{r load shapefiles, echo=FALSE}
+
+africa <- st_read("Shapefiles/africapolitical.shp")
+# plot(africa$geometry)
+
+grid <- st_read("Shapefiles/Grid/Gabon_herbiers_2_0.25_200_50/Gabon_herbiers_full_2018.shp")
+# plot (grid$geometry)
+
 ```
 
 
 
-```{r extreme_coord, eval=FALSE, include=FALSE}
+```{r extreme coord, eval=FALSE, include=FALSE}
 
 #### Check extreme coordinates
 
@@ -141,8 +157,7 @@ end_esp_anal <- species %>%
 end_esp_all <- species %>%
   filter (END_BDDEndemix==1 | END_BDDEndemix==9 | (END_checklist==1 & END_BDDEndemix==2)) %>%
   mutate ("Endemism status"= if_else(END_BDDEndemix==1, 1, if_else(END_BDDEndemix==9, 2, 3))) %>% 
-  select ("Endemism status", FAMILY, SPECIES, UICN_cat_final) %>%
-  rename ("IUCN cat" = UICN_cat_final) %>% 
+  select ("Endemism status", FAMILY, SPECIES, IUCN_cat) %>%
   arrange (FAMILY, SPECIES)
 
 # Table
@@ -155,7 +170,7 @@ kable(end_esp_all, caption = "Table 1: Endemic species of Gabon with preliminary
 
 
 Plot 1 : Nombre de spécimen d'herbiers par espèce endémique
-```{r nb_specimens, echo=FALSE}
+```{r nb specimens, echo=FALSE}
 
 #### Specimen number by species
 
@@ -187,7 +202,7 @@ ggplot(data=gp,aes(x=Nb_spec,y=Nb_esp)) + geom_bar(stat="identity") + geom_text(
 
 
 
-```{r habitus_RB, eval=FALSE, include=FALSE}
+```{r habitus RB, eval=FALSE, include=FALSE}
 
 #### Species habitus according to Rainbio data
 
@@ -210,7 +225,7 @@ Habitus <- habit_RB [habit_RB$NameNoAuthors %in% habit_unique$NameNoAuthors,]
 
 
 Plot 2 : Proportion des habitus chez espèces endémiques
-```{r habitus_stat, echo = FALSE}
+```{r habitus stat, echo = FALSE}
 
 # From dataset "species", from endemic species
 
@@ -235,7 +250,7 @@ ggplot (data=habit_prop, aes(x=reorder(`Habitus 1`,prop), y=prop)) + geom_bar(st
 Plot 3: Proportion des familles chez espèces endémiques
 Plot 4: Famille ayant le plus de % d'espèces endémique (avec nombre d'espèce endémique indiqué)
 Plot 5: Genres les plus représentés chez espèces endémiques
-```{r taxo_stat, echo = FALSE}
+```{r taxo stat, echo = FALSE}
 
 #### Most representative taxon within endemics and proportion within Gabonese flora
 
@@ -341,9 +356,8 @@ Plot 7: Proportion des habitus dans catégories UICN des espèces endémiques
 #### IUCN categories
 
 IUCN_cat_prop <- end_esp_anal %>% 
-  count (UICN_cat_final) %>% # nb of each habitus
+  count (IUCN_cat) %>% # nb of each habitus
   mutate(prop= round(n/sum(n)*100,1)) %>% 
-  rename ("IUCN_cat" = UICN_cat_final)
 
 IUCN_cat_prop$IUCN_cat <- factor (IUCN_cat_prop$IUCN_cat, levels=c("EX","CR","EN","VU","NT","LC","DD")) # obliger de mettre cette donnee en facteur pour que ggplot prenne en compte cet ordre de donnees pour ploter
 ggplot(data=IUCN_cat_prop, aes(x=IUCN_cat, y=`n`)) + geom_bar(stat="identity") + xlab("IUCN categries") + ylab("Species number") + geom_text(aes(label=paste(prop,"%",sep=" ")), vjust=1.6, color="white") + geom_vline(xintercept=4.5, linetype="dashed", size= 1)
@@ -354,9 +368,24 @@ ggplot(data=IUCN_cat_prop, aes(x=IUCN_cat, y=`n`)) + geom_bar(stat="identity") +
 
 # source("D:/WORK/THESIS/RAINBIO_exploration/explodata/Function_label_position_fill.R")
 
-ggplot(data=end_esp_anal, aes(x= factor(UICN_cat_final, levels=c("EX","CR","EN","VU","NT","LC","DD")), fill=`Habitus 1`)) + geom_bar(stat="count") + xlab("IUCN categries") + ylab("Species number") + geom_vline(xintercept=4.5, linetype="dashed", size= 1) + guides(fill=guide_legend(title="Habitus"))
+ggplot(data=end_esp_anal, aes(x= factor(IUCN_cat, levels=c("EX","CR","EN","VU","NT","LC","DD")), fill=`Habitus 1`)) + geom_bar(stat="count") + xlab("IUCN categries") + ylab("Species number") + geom_vline(xintercept=4.5, linetype="dashed", size= 1) + guides(fill=guide_legend(title="Habitus"))
 #stat_fill_labels(position = position_stack(vjust = 50))
 
 ```
 
+
+
+```{r threatened taxo stat, echo= FALSE}
+
+
+
+```
+
+
+
+```{r distribution, echo= FALSE}
+
+
+
+```
 
