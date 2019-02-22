@@ -110,7 +110,7 @@ problems(full_gabon) %>%
 ```
 
 
-```{r load shapefiles, echo=FALSE}
+```{r load shapefiles, include=FALSE}
 
 africa <- st_read("Shapefiles/africapolitical.shp")
 # plot(africa$geometry)
@@ -357,7 +357,7 @@ Plot 7: Proportion des habitus dans catégories UICN des espèces endémiques
 
 IUCN_cat_prop <- end_esp_anal %>% 
   count (IUCN_cat) %>% # nb of each habitus
-  mutate(prop= round(n/sum(n)*100,1)) %>% 
+  mutate(prop= round(n/sum(n)*100,1))
 
 IUCN_cat_prop$IUCN_cat <- factor (IUCN_cat_prop$IUCN_cat, levels=c("EX","CR","EN","VU","NT","LC","DD")) # obliger de mettre cette donnee en facteur pour que ggplot prenne en compte cet ordre de donnees pour ploter
 ggplot(data=IUCN_cat_prop, aes(x=IUCN_cat, y=`n`)) + geom_bar(stat="identity") + xlab("IUCN categries") + ylab("Species number") + geom_text(aes(label=paste(prop,"%",sep=" ")), vjust=1.6, color="white") + geom_vline(xintercept=4.5, linetype="dashed", size= 1)
@@ -377,7 +377,61 @@ ggplot(data=end_esp_anal, aes(x= factor(IUCN_cat, levels=c("EX","CR","EN","VU","
 
 ```{r threatened taxo stat, echo= FALSE}
 
+threat_esp <- end_esp_anal %>% 
+  filter (IUCN_cat == "EX" | IUCN_cat == "CR" | IUCN_cat == "EN" | IUCN_cat == "VU")
 
+
+#### Most represented families in threatened endemics
+
+threat_fam_nb <- threat_esp %>% # calculate nb of species per family within threatened endemics
+  count (FAMILY) %>% 
+  mutate (n = as.numeric (n)) %>% 
+  arrange(-n) # sort by decreasing order
+
+# Plot
+
+X = 10 # The top X most represented genera (in terms of species number) in endemics
+
+threat_fam_low <- threat_fam_nb %>% # Calculate nb of families with less than X species
+  top_n(-X) %>%
+  summarise ("n" = sum(n)) %>%
+  add_column("FAMILY" = "Others families") %>% 
+  select (FAMILY,everything()) # order column
+  
+threat_fam <- threat_fam_nb %>% # Recap tible with families more than X species
+  top_n(X) %>% 
+  rbind(threat_fam_low) %>% 
+  mutate (prop=round(n/sum(n)*100,1))
+
+
+ggplot(data=threat_fam, aes(x=reorder(FAMILY,-n), y=n)) + geom_bar(stat="identity") + xlab("Families") + ylab("Species number") + geom_text(aes(label=paste(round(n/sum(n)*100,1),"%",sep=" ")), vjust=1.6, color="white") + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
+
+
+#### Most represented genera in threatened endemics
+
+threat_gen_nb <- threat_esp %>% # calculate nb of species per genus within threatened endemics
+  count (GENUS) %>% 
+  mutate (n = as.numeric (n)) %>% 
+  arrange(-n) # sort by decreasing order
+
+# Plot
+
+X = 10 # The top X most represented genera (in terms of species number) in endemics
+
+threat_gen_low <- threat_gen_nb %>% # Calculate nb of genus with less than X species
+  top_n(-X) %>%
+  summarise ("n" = sum(n)) %>%
+  add_column("GENUS" = "Others genera") %>% 
+  select (GENUS,everything()) # order column
+  
+threat_gen <- threat_gen_nb %>% # Recap tible with genera more than X species
+  top_n(X) %>% 
+  rbind(threat_gen_low) %>% 
+  mutate (prop=round(n/sum(n)*100,1))
+
+
+ggplot(data=threat_gen, aes(x=reorder(GENUS,-n), y=n)) + geom_bar(stat="identity") + xlab("Genera") + ylab("Species number") + geom_text(aes(label=paste(round(n/sum(n)*100,1),"%",sep=" ")), vjust=1.6, color="white") + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
 
 ```
 
