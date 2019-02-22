@@ -3,8 +3,8 @@ title: "explodata"
 author: "Texier-Dauby"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
-  word_document: default
   pdf_document: default
+  word_document: default
   html_document: default
 ---
 
@@ -20,9 +20,10 @@ library(knitr)
 library(sf)
 library(ggrepel)
 
+
 ```
 
-```{r dropbox-init}
+```{r dropbox-init, eval=FALSE}
 
 drop_auth()
 token <- drop_auth()
@@ -76,7 +77,7 @@ problems(dataset) %>%
   distinct(col)
 
 problems(dataset) %>%
-  filter(col=="MinimumElevation") %>%
+  filter(col=="LatitudeDecimal") %>%
   distinct(actual)
 
 problems(dataset) %>%
@@ -94,7 +95,6 @@ problems(species) %>%
 
 species <- species %>% 
   rename ("IUCN_cat" = UICN_cat_final)
-
 
 ### Data full Gabon (tous les spÃ©cimens du Gabon)
 full_gabon <- 
@@ -115,8 +115,28 @@ problems(full_gabon) %>%
 africa <- st_read("Shapefiles/africapolitical.shp")
 # plot(africa$geometry)
 
-grid <- st_read("Shapefiles/Grid/Gabon_herbiers_2_0.25_200_50/Gabon_herbiers_full_2018.shp")
-# plot (grid$geometry)
+# grid <- st_read("Shapefiles/Gabon_full_2018/Gabon_full_2018.shp")
+# # plot (grid$geometry)
+# 
+# df_union_cast <- st_cast(grid, "POLYGON")
+# 
+# df_union_cast <- 
+#   df_union_cast %>% 
+#   add_column(id=seq(1, nrow(.)))
+# 
+# 
+# grid <- geojson_sf("Shapefiles/Gabon_full_2018_bioregions.geojson")
+# 
+# df_union_cast <- st_cast(grid %>% filter(bioregion==1), "POLYGON")
+# 
+# df_union_cast <- 
+#   df_union_cast %>% 
+#   add_column(id=seq(1, nrow(.)))
+# 
+# df_poly <- 
+#   df_union_cast %>% 
+#   slice(3)
+
 
 ```
 
@@ -126,7 +146,9 @@ grid <- st_read("Shapefiles/Grid/Gabon_herbiers_2_0.25_200_50/Gabon_herbiers_ful
 
 #### Check extreme coordinates
 
-check <- select(dataset, ID, LatitudeDecimal, LongitudeDecimal)
+check <- dplyr::select(dataset, ID, LatitudeDecimal, LongitudeDecimal)
+range(check$LatitudeDecimal)
+range(check$LongitudeDecimal)
 arrange(check, LatitudeDecimal)
 arrange(check, desc(LatitudeDecimal))
 arrange(check, LongitudeDecimal)
@@ -141,23 +163,38 @@ arrange(check, desc(LongitudeDecimal))
 ```
 
 
-# Gabonese plant endemism analyse
+```{r table-code_end}
+
+knitr::kable(tibble(code = c(0, 1, 2, 9),
+       meaning = c("Not endemic",
+                   "Strictly endemic",
+                   "Potentially endemic (not verified)",
+                   "Potentially sub-endemic")), caption = "Endemic code used")
+
+
+```
+
+
+
+# Gabonese plant endemism analysis
 ```{r species table, echo= FALSE}
 
 ## Endemic species with specimen list
-end_esp_anal <- species %>%
+end_esp_anal <- 
+  species %>%
   filter (END_BDDEndemix==1 | END_BDDEndemix==9) # select strict (1) and likely (9) endemic species data with verified specimen list
 
 
-# prévoir d'enlever les ined ! + de mettre les noms updatés (Name New) #
+# pr?voir d'enlever les ined ! + de mettre les noms updat?s (Name New) #
 
 
 #### Strict and likely endemic species
 
-end_esp_all <- species %>%
+end_esp_all <- 
+  species %>%
   filter (END_BDDEndemix==1 | END_BDDEndemix==9 | (END_checklist==1 & END_BDDEndemix==2)) %>%
-  mutate ("Endemism status"= if_else(END_BDDEndemix==1, 1, if_else(END_BDDEndemix==9, 2, 3))) %>% 
-  select ("Endemism status", FAMILY, SPECIES, IUCN_cat) %>%
+  mutate (endemism_status= if_else(END_BDDEndemix==1, 1, if_else(END_BDDEndemix==9, 2, 3))) %>% 
+  select (endemism_status, FAMILY, SPECIES, IUCN_cat) %>%
   arrange (FAMILY, SPECIES)
 
 # Table
@@ -169,17 +206,19 @@ kable(end_esp_all, caption = "Table 1: Endemic species of Gabon with preliminary
 ```
 
 
-Plot 1 : Nombre de spécimen d'herbiers par espèce endémique
-```{r nb specimens, echo=FALSE}
+
+```{r nb-specimens, echo=FALSE, message = FALSE, warning=F, fig.height = 10, fig.width = 10, fig.cap='Number of species with given number of specimen'}
 
 #### Specimen number by species
 
-nb_occ_tot <- dataset %>% 
+nb_occ_tot <- 
+  dataset %>% 
   count (NameNoAuthors) %>%  # compte le nombre de specimens par espece
   rename(Tot = n) # renomme la colonne "n" en "Tot"
 
 # Avec condition
-nb_occ_crit <- dataset %>% 
+nb_occ_crit <- 
+  dataset %>% 
   filter (grepl("Klaine", CollectorString)) %>% # lignes qui ont comme collecteur "Klaine"
   count (NameNoAuthors) %>%  # nb de specimen par espece avec cette condition
   rename("Klaine" = n)
@@ -224,7 +263,7 @@ Habitus <- habit_RB [habit_RB$NameNoAuthors %in% habit_unique$NameNoAuthors,]
 ```
 
 
-Plot 2 : Proportion des habitus chez espèces endémiques
+Plot 2 : Proportion des habitus chez esp?ces end?miques
 ```{r habitus stat, echo = FALSE}
 
 # From dataset "species", from endemic species
@@ -247,9 +286,9 @@ ggplot (data=habit_prop, aes(x=reorder(`Habitus 1`,prop), y=prop)) + geom_bar(st
 ```
 
 
-Plot 3: Proportion des familles chez espèces endémiques
-Plot 4: Famille ayant le plus de % d'espèces endémique (avec nombre d'espèce endémique indiqué)
-Plot 5: Genres les plus représentés chez espèces endémiques
+Plot 3: Proportion des familles chez esp?ces end?miques
+Plot 4: Famille ayant le plus de % d'esp?ces end?mique (avec nombre d'esp?ce end?mique indiqu?)
+Plot 5: Genres les plus repr?sent?s chez esp?ces end?miques
 ```{r taxo stat, echo = FALSE}
 
 #### Most representative taxon within endemics and proportion within Gabonese flora
@@ -349,8 +388,8 @@ ggplot(data=end_gen, aes(x=reorder(GENUS,-n), y=n)) + geom_bar(stat="identity") 
 ```
 
 
-Plot 6: Proportion des catégories UICN chez espèces endémiques
-Plot 7: Proportion des habitus dans catégories UICN des espèces endémiques
+Plot 6: Proportion des cat?gories UICN chez esp?ces end?miques
+Plot 7: Proportion des habitus dans cat?gories UICN des esp?ces end?miques
 ```{r threatened stat, echo = FALSE}
 
 #### IUCN categories
