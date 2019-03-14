@@ -204,8 +204,21 @@ end_esp_anal <-
 
 # prevoir d'enlever les ined ! + de mettre les noms updates (Name New) #
 
-end_esp_all <- species %>%
-  filter (END_BDDEndemix==1 | END_BDDEndemix==9 | (END_checklist==1 & END_BDDEndemix==2))
+# pr?voir d'enlever les ined ! + de mettre les noms updat?s (Name New) #
+
+
+#### Strict and likely endemic species
+
+end_esp_all <- 
+  species %>%
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9 | (END_checklist==1 & END_BDDEndemix==2)) %>%
+  mutate (endemism_status= if_else(END_BDDEndemix==1, 1, if_else(END_BDDEndemix==9, 2, 3))) %>% 
+  select (endemism_status, FAMILY, SPECIES, IUCN_cat) %>%
+  arrange (FAMILY, SPECIES)
+
+# Table
+options(knitr.kable.NA = '')
+kable(end_esp_all, caption = "Table 1: Endemic species of Gabon with preliminary conservation status. Endemism status: 1.Strict endemic; 2.Likely endemic; 3.Checklist endemic")
 
 ```
 
