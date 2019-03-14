@@ -1,0 +1,186 @@
+---
+title: "mapdistrib"
+author: "Texier"
+date: "28 fevrier 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r load packages, include=FALSE}
+
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(ggspatial)
+library(ggmap)
+library(cowplot)
+
+```
+
+
+```{r load data, include=FALSE}
+
+dataset <- readxl::read_xlsx("dataset.xlsx")
+
+dataset <- dataset %>% 
+  mutate ("LongitudeDecimal" = as.numeric(LongitudeDecimal), "LatitudeDecimal" = as.numeric(LatitudeDecimal)) %>%
+  mutate (KindColl = replace(KindColl, is.na(KindColl), "Herbarium")) %>% 
+  mutate (KindColl = replace(KindColl, KindColl == "PRESERVED_SPECIMEN", "Herbarium")) %>% 
+  mutate (KindColl = replace(KindColl, KindColl == "herb", "Herbarium")) %>%
+  mutate (KindColl = replace(KindColl, KindColl == "Herb", "Herbarium")) %>%
+  mutate (KindColl = replace(KindColl, KindColl == "Plot_data", "Observation")) %>% 
+  mutate (KindColl = replace(KindColl, KindColl == "Sili", "Silicagel")) %>% 
+  arrange (NameNoAuthors)
+
+```
+
+
+```{r load shapefiles, include=FALSE}
+
+africa <- st_read("Shapefiles/africapolitical.shp")
+
+# africa <- africa %>% 
+#   mutate(POPYCOUN = replace (POPYCOUN, list("CM","CF", "CG", "EK", "GB"), c("Cameroon","Congo-Brazzaville", "D.R.C", "Equatorial Guinea", "Gabon")))
+  
+```
+
+
+
+```{r distribution map, echo=FALSE}
+
+species <- dataset %>% 
+  distinct(NameNoAuthors)
+
+for (i in 1:length(species$NameNoAuthors)){
+  
+spec <- dataset %>% 
+  filter (NameNoAuthors %in% species[i,"NameNoAuthors"]) %>% 
+  select (NameNoAuthors, LongitudeDecimal, LatitudeDecimal, KindColl) %>%
+  mutate ("lon" = LongitudeDecimal, "lat" = LatitudeDecimal) %>% 
+  st_as_sf (coords = c("lon", "lat"), crs = 4326) # code crs WGS84 est 4326 (code EPSG)
+
+esp_name <- unique(spec$NameNoAuthors)
+
+# ## Consider the different type of data
+# spec_herb <- spec %>% # herbarium specimen
+#   filter (KindColl == "Herbarium")
+# 
+# spec_plot <- spec %>% # plot data or observation without herbarium specimen
+#   filter (KindColl == "Observation")
+# 
+# spec_sili <- spec %>% 
+#   filter (KindColl == "Silicagel")
+
+
+## GGMAP
+# Expand range of lat/lon for map plotting (will be use only if lat/lon range < mindeg)
+mindeg = 3 # if distance between min/max lat/lon is < mindeg so expand the bbox with minexp
+minexp = 0.8 #  degree expansion
+if (abs(max(st_coordinates(spec$geometry)[,1])-min(st_coordinates(spec$geometry)[,1]))<mindeg) {
+  if(sign(min(st_coordinates(spec$geometry)[,1]))==1) {
+      minlon = min(st_coordinates(spec$geometry)[,1])-minexp
+    } else {
+      minlon = min(st_coordinates(spec$geometry)[,1])+minexp
+    }}
+
+if (abs(max(st_coordinates(spec$geometry)[,1])-min(st_coordinates(spec$geometry)[,1]))<mindeg) {
+  if(sign(max(st_coordinates(spec$geometry)[,1]))==1){
+      maxlon = max(st_coordinates(spec$geometry)[,1])+minexp
+    } else {
+      maxlon = max(st_coordinates(spec$geometry)[,1])-minexp
+    }}
+
+if (abs(max(st_coordinates(spec$geometry)[,2])-min(st_coordinates(spec$geometry)[,2]))<mindeg){
+  if(sign(min(st_coordinates(spec$geometry)[,1]))==1) {
+      minlat = min(st_coordinates(spec$geometry)[,2])-minexp
+    } else {
+      minlat = min(st_coordinates(spec$geometry)[,2])+minexp
+    }}
+
+if (abs(max(st_coordinates(spec$geometry)[,2])-min(st_coordinates(spec$geometry)[,2]))<mindeg){
+  if(sign(max(st_coordinates(spec$geometry)[,1]))==1){
+      maxlat = max(st_coordinates(spec$geometry)[,2])+minexp
+    } else {
+      maxlat = max(st_coordinates(spec$geometry)[,2])-minexp
+    }}
+  
+
+loncalc <- if (abs(max(st_coordinates(spec$geometry)[,1])-min(st_coordinates(spec$geometry)[,1]))<mindeg) {
+    c(minlon, maxlon)
+  } else {
+    c(min(st_coordinates(spec$geometry)[,1]),max(st_coordinates(spec$geometry)[,1]))
+  }
+
+latcalc <-if (abs(max(st_coordinates(spec$geometry)[,2])-min(st_coordinates(spec$geometry)[,2]))<mindeg) {
+    c(minlat, maxlat)
+  } else {
+    c(min(st_coordinates(spec$geometry)[,2]),max(st_coordinates(spec$geometry)[,2]))
+  }
+
+# Define % of expansion (f parameter in make_bbox) according to range of lat/lon (to avoid specimen on the border)
+highrange <- 10
+middlerange <- 6
+lowrange <- 2.5
+
+if (abs(loncalc[2]-loncalc[1])>highrange | abs(latcalc[2]-latcalc[1])>highrange) {f=0.05} else {if ((abs(loncalc[2]-loncalc[1])>middlerange & abs(loncalc[2]-loncalc[1])<highrange) | (abs(latcalc[2]-latcalc[1])>middlerange & abs(loncalc[2]-loncalc[1])<highrange)) {f=0.15} else {if ((abs(loncalc[2]-loncalc[1])>lowrange & abs(loncalc[2]-loncalc[1])<middlerange)| (abs(latcalc[2]-latcalc[1])>lowrange & abs(loncalc[2]-loncalc[1])<middlerange)) {f=0.4} else {f=0.8} }}
+
+sbbox <- make_bbox(lon = loncalc, lat = latcalc, f = f) # create a boundary box to map specimen with ggmap/get_map
+
+
+background <- get_map(location = sbbox, maptype = "terrain", source = "google") # get background map according to boundary box defined (sbbox)
+
+# # Map by data type
+# final_map <- ggmap(background) + geom_sf(data=spec_herb$geometry, aes(color=NameNoAUthors), inherit.aes = FALSE, colour = "red", size = 2, show.legend = TRUE) + geom_sf(data=spec_plot$geometry, inherit.aes = FALSE, colour = "blue", size = 2) + geom_sf(data=spec_sili$geometry, inherit.aes = FALSE, colour = "green", size = 2) + annotation_scale(width_hint = 0.5) + annotation_north_arrow(location = "bl", which_north = "true", pad_x = unit(0.1, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering)
+
+# Map all data type with legend
+theme_ggmap <- theme(legend.title = element_blank(), legend.position="bottom", axis.title.x=element_blank(), axis.title.y=element_blank(), panel.border = element_rect(linetype = "solid", color = "black", size = 1.5, fill = NA), axis.text.x = element_text(angle = if(sbbox[3]-sbbox[1]<4.5){90}))
+
+final_map <- ggmap(background) + 
+  geom_sf(data=spec$geometry, aes(color=as.factor(spec$KindColl)), inherit.aes = FALSE, size = 3, show.legend = "point") + 
+  scale_color_manual(values = c("Herbarium" = "#990000", "Silicagel" = "#339900", "Observation" = "#333399")) +  
+  theme_ggmap + 
+  annotation_scale(width_hint = 0.3, height = unit(0.2, "cm")) + 
+  annotation_north_arrow(location = "bl", which_north = "true",  height = unit(1, "cm"), width = unit(1, "cm"), pad_x = unit(0.05, "cm"), pad_y = unit(0.45, "cm"), style = north_arrow_fancy_orienteering)
+
+
+# GGPLOT
+mindeg = 1.5 # minimum expand (lat or lon) in decimal degree of specimen distribution to consider "minexp" zoom
+minexp = 2 # minimum expansion zoom in decimal degree to map the distribution
+normexp = 0.8 # normal expansion zoom in decimal degree to map when distribution is not under "mindeg" threshold
+
+if (abs(max(st_coordinates(spec$geometry)[,1])-min(st_coordinates(spec$geometry)[,1]))<mindeg) {X=minexp} else {X=normexp} # nb of additional degree of which the map will be zoom regarding lat/lon specimens limits (idea: could be a % (e;g. add/substract 10% of lat/lon))
+if (abs(max(st_coordinates(spec$geometry)[,2])-min(st_coordinates(spec$geometry)[,2]))<mindeg) {Y=minexp} else {Y=normexp}
+
+mapRange <- c(min(st_coordinates(spec$geometry)[,1])-X, max(st_coordinates(spec$geometry)[,1])+X, min(st_coordinates(spec$geometry)[,2])-Y, max(st_coordinates(spec$geometry)[,2])+Y)
+#
+#
+# theme_mini_map <- theme(panel.border = element_rect(linetype = "solid", color = "black", fill = NA), panel.grid.minor = element_blank(), axis.text.x=element_blank(),  axis.text.y=element_blank(), axis.ticks=element_blank())
+#
+# africamap <- ggplot() + geom_sf(data=africa, fill="white") + coord_sf(datum = NA) + theme_mini_map + geom_rect(aes(xmin = mapRange[1], xmax = mapRange[2], ymin = mapRange[3], ymax = mapRange[4]), inherit.aes = FALSE, fill = NA, colour = "red", size = 1)
+#
+# theme_distr_map <- theme(panel.background = element_rect(fill = "#0066CC"), panel.border = element_rect(linetype = "solid", color = "black", fill = NA), panel.grid.major = element_line(size = 0.01, colour = "black"))
+#
+# map <- ggplot() +
+#   theme_distr_map +
+#   geom_sf(data=africa, fill="white") +
+#   geom_sf(data=spec$geometry, colour = "red", size = 3) +
+#   coord_sf(xlim = (mapRange[c(1:2)]), ylim = (mapRange[c(3:4)])) +
+#   annotation_scale(width_hint = 0.5) + annotation_north_arrow(location = "bl", which_north = "true", pad_x = unit(0.1, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering)
+#
+# # ocean blue color : "#0066CC" or "azure"
+# # + geom_sf_label(data =africa, aes(label = POPYCOUN))
+
+# final_map <- ggdraw(map) + draw_plot(africamap, x = -0.26, y = 0.39, width = 1, height = 1, scale = 0.2)
+
+
+ggsave(filename=paste(esp_name,"_map",".jpeg",sep=""),final_map, path=paste(getwd(),"/Maps_distrib",sep=""))
+}
+
+```
+
+
