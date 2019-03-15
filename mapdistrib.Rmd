@@ -148,33 +148,33 @@ final_map <- ggmap(background) +
   annotation_north_arrow(location = "bl", which_north = "true",  height = unit(1, "cm"), width = unit(1, "cm"), pad_x = unit(0.05, "cm"), pad_y = unit(0.45, "cm"), style = north_arrow_fancy_orienteering)
 
 
-# GGPLOT
-mindeg = 1.5 # minimum expand (lat or lon) in decimal degree of specimen distribution to consider "minexp" zoom
-minexp = 2 # minimum expansion zoom in decimal degree to map the distribution
-normexp = 0.8 # normal expansion zoom in decimal degree to map when distribution is not under "mindeg" threshold
-
-if (abs(max(st_coordinates(spec$geometry)[,1])-min(st_coordinates(spec$geometry)[,1]))<mindeg) {X=minexp} else {X=normexp} # nb of additional degree of which the map will be zoom regarding lat/lon specimens limits (idea: could be a % (e;g. add/substract 10% of lat/lon))
-if (abs(max(st_coordinates(spec$geometry)[,2])-min(st_coordinates(spec$geometry)[,2]))<mindeg) {Y=minexp} else {Y=normexp}
-
-mapRange <- c(min(st_coordinates(spec$geometry)[,1])-X, max(st_coordinates(spec$geometry)[,1])+X, min(st_coordinates(spec$geometry)[,2])-Y, max(st_coordinates(spec$geometry)[,2])+Y)
-#
-#
+# # GGPLOT
+# mindeg = 1.5 # minimum expand (lat or lon) in decimal degree of specimen distribution to consider "minexp" zoom
+# minexp = 2 # minimum expansion zoom in decimal degree to map the distribution
+# normexp = 0.8 # normal expansion zoom in decimal degree to map when distribution is not under "mindeg" threshold
+# 
+# if (abs(max(st_coordinates(spec$geometry)[,1])-min(st_coordinates(spec$geometry)[,1]))<mindeg) {X=minexp} else {X=normexp} # nb of additional degree of which the map will be zoom regarding lat/lon specimens limits (idea: could be a % (e;g. add/substract 10% of lat/lon))
+# if (abs(max(st_coordinates(spec$geometry)[,2])-min(st_coordinates(spec$geometry)[,2]))<mindeg) {Y=minexp} else {Y=normexp}
+# 
+# mapRange <- c(min(st_coordinates(spec$geometry)[,1])-X, max(st_coordinates(spec$geometry)[,1])+X, min(st_coordinates(spec$geometry)[,2])-Y, max(st_coordinates(spec$geometry)[,2])+Y)
+# 
+# 
 # theme_mini_map <- theme(panel.border = element_rect(linetype = "solid", color = "black", fill = NA), panel.grid.minor = element_blank(), axis.text.x=element_blank(),  axis.text.y=element_blank(), axis.ticks=element_blank())
-#
+# 
 # africamap <- ggplot() + geom_sf(data=africa, fill="white") + coord_sf(datum = NA) + theme_mini_map + geom_rect(aes(xmin = mapRange[1], xmax = mapRange[2], ymin = mapRange[3], ymax = mapRange[4]), inherit.aes = FALSE, fill = NA, colour = "red", size = 1)
-#
+# 
 # theme_distr_map <- theme(panel.background = element_rect(fill = "#0066CC"), panel.border = element_rect(linetype = "solid", color = "black", fill = NA), panel.grid.major = element_line(size = 0.01, colour = "black"))
-#
+# 
 # map <- ggplot() +
-#   theme_distr_map +
-#   geom_sf(data=africa, fill="white") +
-#   geom_sf(data=spec$geometry, colour = "red", size = 3) +
-#   coord_sf(xlim = (mapRange[c(1:2)]), ylim = (mapRange[c(3:4)])) +
-#   annotation_scale(width_hint = 0.5) + annotation_north_arrow(location = "bl", which_north = "true", pad_x = unit(0.1, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering)
-#
-# # ocean blue color : "#0066CC" or "azure"
-# # + geom_sf_label(data =africa, aes(label = POPYCOUN))
-
+#  theme_distr_map +
+#  geom_sf(data=africa, fill="white") +
+#  geom_sf(data=spec$geometry, colour = "red", size = 3) +
+#  coord_sf(xlim = (mapRange[c(1:2)]), ylim = (mapRange[c(3:4)])) +
+#  annotation_scale(width_hint = 0.5) + annotation_north_arrow(location = "bl", which_north = "true", pad_x = unit(0.1, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering)
+# 
+#  # ocean blue color : "#0066CC" or "azure"
+#  # + geom_sf_label(data =africa, aes(label = POPYCOUN))
+# 
 # final_map <- ggdraw(map) + draw_plot(africamap, x = -0.26, y = 0.39, width = 1, height = 1, scale = 0.2)
 
 
