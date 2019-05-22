@@ -857,7 +857,7 @@ subsamp_count <- subsamp %>%
   count(tax_tax) %>% 
   rename (nb = n)
 chao2[i] <- length(unique(subsamp$tax_tax)) + ((sum(subsamp_count$nb==1)*(sum(subsamp_count$nb==1)-1))/(2*(sum(subsamp_count$nb==2)+1)))
-print(i)
+cat(i, " ")
 }
 
 ## ---> result: no real plateau of accumulation, show that Gabon is not well collected; inflexion of curve appears for n(specimen) is ca. 30000! so need 30000 specimen to make a quite good estimation of total richness, which is for a grid cell very too much !  So we can't use extrapolation to calculate total richness per grid cell and use % of endemism to calculate estimated number of endemic species per grid cell.
@@ -874,38 +874,49 @@ print(i)
 #   arrange (NameNoAuthors)
 
 
-spec_grid <- left_join(as_tibble(grid_gab), select(as_tibble(nb_spec_grid), ID_grid, n), by = "ID_grid") %>% # integrate nb of specimens per cell to the grid data
+a <- full_gabon_sf_grid %>% # nb of specimens identified at species level per cell
+  filter (tax_esp != "###") %>% 
+  count(ID_grid)
+
+spec_grid <- left_join(as_tibble(grid_gab), select(as_tibble(a), ID_grid, n), by = "ID_grid") %>% # integrate nb of specimens per cell to the grid data
   mutate (n = as.numeric(n)) %>% 
   rename (n_spec_full = n)
 
-k = 200 # value of minimal number of specimen in a grid cell to compute resampling
-rep = 1000
+k = 50 # value of minimal number of specimen in a grid cell to compute resampling
+rep = 100
 resampling_result <- grid_gab
 
 
 for (i in 1 : nrow(grid_gab)) {
 tot <- vector()
 end <- vector()
+threat <- vector()
   if (!is.na (spec_grid$n_spec_full[i]) & spec_grid$n_spec_full[i]>k) {
     for (j in 1 : rep){
       subsamp <- sample(pull(as_tibble(full_gabon_sf_grid) %>% filter (ID_grid == i) %>% filter (tax_esp != "###") %>% select (tax_tax)), size = k, replace = FALSE) # pull allows to make a vector from a column tibble
-      tot[j] <- length(unique(subsamp))
-      end[j] <- length(unique(subsamp %in% end_esp_all$SPECIES))
+      tot[j] <- length(unique(subsamp)) # total richness
+      subsamp <- enframe(subsamp) %>% rename (NameNoAuthors = value) # enframe is the new equivalent of as_tibble for a vector
+      end[j] <- nrow(unique(subsamp[subsamp$NameNoAuthors %in% end_esp_all$SPECIES,])) # endemism richness
+      threat[j] <- nrow(unique(subsamp[subsamp$NameNoAuthors %in% threat_esp$SPECIES,])) # threatened richness
     }
-  tot <- sort(tot)
+  tot <- sort (tot)
   end <- sort (end)
+  threat <- sort (threat)
   resampling_result [i,3] <- mean(tot)
-  resampling_result [i,4] <- tot[around(0.05*rep,0)]
-  resampling_result [i,5] <- tot[around(0.95*rep,0)]
+  resampling_result [i,4] <- tot[round(0.05*rep,0)]
+  resampling_result [i,5] <- tot[round(0.95*rep,0)]
   resampling_result [i,6] <- mean(end)
-  resampling_result [i,7] <- end[around(0.05*rep,0)]
-  resampling_result [i,8] <- end[around(0.95*rep,0)]
+  resampling_result [i,7] <- end[round(0.05*rep,0)]
+  resampling_result [i,8] <- end[round(0.95*rep,0)]
+  resampling_result [i,9] <- mean(threat)
+  resampling_result [i,10] <- threat[round(0.05*rep,0)]
+  resampling_result [i,11] <- threat[round(0.95*rep,0)]
   }
-print(i)
+cat(i, " ")
 }
 
 resampling_result <- resampling_result %>% 
-  rename (mean_tot = V3, min_conf_tot = V4, max_conf_tot = V5, mean_end = V6, min_conf_end = V7, max_conf_end = V8)
+  rename (mean_tot = V3, min_conf_tot = V4, max_conf_tot = V5, mean_end = V6, min_conf_end = V7, max_conf_end = V8, mean_threat = V9, min_conf_threat = V10, max_conf_threat = V11)
 
 ```
 
@@ -915,7 +926,7 @@ resampling_result <- resampling_result %>%
 
 ggplot() + 
   geom_sf(data=resampling_result$geometry, aes(fill=resampling_result$mean_tot)) + 
-  scale_fill_gradient(low="lightyellow", high="red", name = "Number") + 
+  scale_fill_gradient(low="green", high="red", name = "Number") + 
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
@@ -932,7 +943,24 @@ ggplot() +
 
 ggplot() + 
   geom_sf(data=resampling_result$geometry, aes(fill=resampling_result$mean_end)) + 
-  scale_fill_gradient(low="lightyellow", high="red", name = "Number") + 
+  scale_fill_gradient(low="green", high="red", name = "Number") + 
+  geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
+  geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
+  geom_sf(data=road$geometry, color = "black", size = 0.6) + 
+  geom_sf(data=city$geometry, size = 3) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
+  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=16))
+
+
+```
+
+
+
+```{r resampling threat end grid plot, echo = FALSE}
+
+ggplot() + 
+  geom_sf(data=resampling_result$geometry, aes(fill=resampling_result$mean_threat)) + 
+  scale_fill_gradient(low="green", high="red", name = "Number") + 
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
