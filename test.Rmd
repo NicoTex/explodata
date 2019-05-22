@@ -1288,3 +1288,122 @@ mapview <- mapview (data_mapview, zcol = "IUCN_cat")
 mapshot (mapview, file = paste0(getwd(), "/map.html"))
   
 ```
+
+
+
+
+
+#BIOREGIONS
+```{r load-packages}
+
+library(tidyverse)
+library(sf)
+library(geojsonsf)
+library(RColorBrewer)
+
+```
+
+
+```{r load data, include=FALSE}
+
+dataset<- 
+  read_csv("Specimens_georeferenced_all_TSBC.csv", col_types = 
+              list(IDRainbio = col_double(),
+                   IDGBIF = col_double(),
+                   Full_RB = col_double(),
+                   SameAs = col_character(),
+                   LatitudeDecimal = col_double(),
+                   LongitudeDecimal = col_double(),
+                   AccuracyGBIF = col_character(),
+                   AccuracyDroissart = col_double(),
+                   Accuracy = col_double(),
+                   Kept_analysis = col_character(),
+                   Updated_data_Trop = col_character(),
+                   `CollectionNumber (numeric)` = col_character(),
+                   LowerName = col_character(),
+                   `Maximum Day` = col_double(),
+                   `Maximum Month` = col_double(),
+                   `Maximum Year` = col_double(),
+                   `Minimum Year` = col_character(),
+                   `Minimum Day` = col_character(),
+                   `Minimum Month` = col_character(),
+                   MinimumElevation = col_character(),
+                   `Ecological Habitat` = col_character(),
+                   `Ecological Substrate` = col_character(),
+                   `Ecological Seasonality` = col_character(),
+                   `Ecological Site` = col_character(),
+                   KindColl = col_character(),
+                   ChildHerbNb = col_character(),
+                   ChildDB = col_character(),
+                   `Uploaded Trop` = col_character(),
+                   DeterminationYear = col_character(),
+                   DeterminationMonth = col_character(),
+                   LinkWeb = col_character()
+                   ))
+
+problems(dataset) %>%
+  distinct(col)
+
+```
+
+
+```{r load shapefiles & sf object, include=FALSE}
+
+## Infomap biogreions
+grid <- geojson_sf("Shapefiles/Specimens_georeferenced_all_TSBC_infomap_bioregions(2).geojson")
+plot (grid$geometry)
+
+df_union_cast <- st_cast(grid, "POLYGON") # split multipolygons in multiple polygons
+# plot(df_union_cast[df_union_cast$bioregion==4,]$geometry)
+
+df_union_cast <- df_union_cast %>% # add a number to each polygon
+  add_column(ID_grid=seq(1, nrow(.)))
+
+colourCount = length(unique(grid$bioregion)) # mini function to get as much color as number of bioregions
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+ggplot() + # plot bioregions
+  geom_sf(data=df_union_cast$geometry, aes(fill=as.factor(df_union_cast$bioregion))) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme(legend.position="bottom") +
+  guides(fill=guide_legend(nrow=2)) +
+  labs(fill = "Bioregions") +
+  geom_sf_text(data=df_union_cast$geometry, aes(label = df_union_cast$ID_grid), size=3)
+
+# st_write(df_union_cast,"bioregions.shp")
+
+
+# SF object
+dataset_sf <- st_as_sf(x = dataset, coords = c("LongitudeDecimal", "LatitudeDecimal"), crs = 4326) # dataset as sf object
+
+```
+
+
+
+```{r attribute data to bioregions}
+
+dataset_bioreg <- st_intersection(dataset_sf,df_union_cast) # specimen with bioregions attribution
+
+dataset_bioreg <- dataset_bioreg %>% 
+  mutate(ID_grid=as.numeric(ID_grid))
+
+
+ID_spec_dups <- unique(dataset_bioreg$ID[duplicated(dataset_bioreg$ID)])
+
+ID_grid_dups <- dataset_bioreg[dataset_bioreg$ID %in% ID_spec_dups,] %>%
+  as.data.frame() %>% 
+  distinct (ID_grid)
+
+
+```
+
+
+
+```{r correction overlapping}
+
+overlap <- st_within(df_union_cast,df_union_cast)
+a <- overlap 
+
+unlist(lapply(a,function (x) length(x)))
+
+```
