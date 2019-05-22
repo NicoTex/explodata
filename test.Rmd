@@ -20,6 +20,7 @@ library(knitr)
 library(sf)
 library(ggrepel)
 library(gridExtra)
+library(elevatr)
 library(mapview)
 
 ```
@@ -33,12 +34,12 @@ saveRDS(token, file = "token.rds")
 ```
 
 ```{r download-data-dropbox, eval=FALSE, echo=FALSE}
-drop_download("gilles_nico_tex/Selection_specimen_GAB_end_04032019.csv", overwrite = TRUE)
-drop_download("gilles_nico_tex/Gabon_Endemics_species_04032019.csv", overwrite = TRUE)
+drop_download("gilles_nico_tex/Selection_specimen_GAB_end_28032019.csv", overwrite = TRUE)
+drop_download("gilles_nico_tex/Gabon_Endemics_species_28032019.csv", overwrite = TRUE)
 drop_download("gilles_nico_tex/Gabon_herbiers_full_georef_2018.csv", overwrite = TRUE)
 ```
 
-```{r dropbox load, include=FALSE}
+```{r data load, include=FALSE}
 
 #### Load dataset from dropbox
 
@@ -49,8 +50,8 @@ drop_download("gilles_nico_tex/Gabon_herbiers_full_georef_2018.csv", overwrite =
 
 ### Data specimen (tous les specimens des especes endemiques du Gabon)
 
-dataset <- 
-  read_csv("Selection_specimen_GAB_end_04032019.csv", col_types = 
+dataset_full <- 
+  read_csv("Selection_specimen_GAB_end_28032019.csv", col_types = 
               list(IDGBIF = col_double(),
                    SameAs = col_character(),
                    LatitudeDecimal = col_double(),
@@ -73,6 +74,9 @@ dataset <-
                    DeterminationYear = col_character()
                    ))
 
+dataset <- dataset_full %>% 
+  filter (is.na(Kept_analysis)) # kept only georeferenced specimen
+
 ## field with problems in importation
 problems(dataset) %>%
   distinct(col)
@@ -89,7 +93,7 @@ problems(dataset) %>%
 ### Data species (metadata sur les especes endemiques du Gabon)
 
 species <- 
-  read_csv("Gabon_Endemics_species_04032019.csv")
+  read_csv("Gabon_Endemics_species_28032019.csv")
 species <- species %>% 
   rename ("IUCN_cat" = UICN_cat_final)
 
@@ -98,7 +102,7 @@ problems(species) %>%
 
 ### Data full Gabon (tous les specimens d'herbiers géoréférencés du Gabon)
 full_gabon <- 
-  read_csv("Gabon_herbiers_full_georef_2018.csv", col_types = 
+  read_csv("RB_full_TSBC_Trop.csv", col_types = 
               list(ddlat = col_double(),
                    ddlon = col_double(),
                    nbr = col_character()
@@ -106,6 +110,10 @@ full_gabon <-
 
 problems(full_gabon) %>%
  distinct(col)
+
+full_gabon <- full_gabon %>% 
+  filter (!is.na(ddlat)) %>% # remove non georeferenced specimen
+  filter (country=="Gabon")
 
 ```
 
@@ -123,6 +131,10 @@ PNgabon <- st_transform(PNgabon, 4326)
 logging_gabon <- st_read("Shapefiles/GAB_logging_union_2009.shp", crs =5223)
 logging_gabon <-st_transform(logging_gabon, 4326)
 # plot(logging_gabon$geometry)
+
+mining_gabon <- st_read("Shapefiles/GAB_mining_union_2009.shp", crs =5223)
+mining_gabon <-st_transform(mining_gabon, 4326)
+# plot(mining_gabon$geometry)
 
 road <- st_read("Shapefiles/GAB_main_road_2013.shp", crs =5223)
 road <-st_transform(road, 4326)
@@ -165,7 +177,7 @@ full_gabon_sf <- st_as_sf (x = full_gabon, coords = c("ddlon", "ddlat"), crs = 4
 
 #### Check extreme coordinates
 
-check <- dataset %>% select(ID, LatitudeDecimal, LongitudeDecimal)
+check <- dataset %>% dplyr::select(ID, LatitudeDecimal, LongitudeDecimal)
 range(check$LatitudeDecimal)
 range(check$LongitudeDecimal)
 arrange(check, LatitudeDecimal)
@@ -198,14 +210,15 @@ knitr::kable(tibble(code = c(0, 1, 2, 9),
 ```{r table end anal et all, include= FALSE}
 
 ## Endemic species with specimen list
-end_esp_anal <- 
-  species %>%
+end_esp_anal <- species %>%
   filter (END_BDDEndemix==1 | END_BDDEndemix==9) # select strict (1) and likely (9) endemic species data with verified specimen list
 
-# prevoir d'enlever les ined ! + de mettre les noms updates (Name New) #
 
 end_esp_all <- species %>%
-  filter (END_BDDEndemix==1 | END_BDDEndemix==9 | (END_checklist==1 & END_BDDEndemix==2))
+  filter (END_BDDEndemix==1 | END_BDDEndemix==9 | (END_checklist==1 & END_BDDEndemix==2)) # all endemics including species with non verified specimen list (endemics from checklist of vascular plants)
+
+taxo <- end_esp_all %>% 
+  count(Taxo_level)
 
 ```
 
@@ -215,16 +228,19 @@ end_esp_all <- species %>%
 ## Specimens number
 ```{r nb specimens, echo=FALSE, message = FALSE, warning=F, fig.height = 10, fig.width = 10, fig.cap='Figure 1: Number of taxa with given number of specimens'}
 
-#### Specimen number by species
+#### Herbarium specimen number by species
+
+herbarium_data <- dataset_full %>% # discard plot data
+  filter(KindColl!="Plot_data" | is.na(KindColl))
 
 nb_occ_tot <- 
-  dataset %>% 
+  herbarium_data %>% 
   count (NameNoAuthors) %>%  # compte le nombre de specimens par espece
   rename(Tot = n) # renomme la colonne "n" en "Tot"
 
 # Avec condition
 nb_occ_crit <- 
-  dataset %>% 
+  herbarium_data %>% 
   filter (grepl("Klaine", CollectorString)) %>% # lignes qui ont comme collecteur "Klaine"
   count (NameNoAuthors) %>%  # nb de specimen par espece avec cette condition
   rename("Klaine" = n)
@@ -244,10 +260,10 @@ gp$Nb_spec <- factor (gp$Nb_spec, levels=c("1","2","3-5","6-10","10-30",">30")) 
 
 ggplot(data=gp,aes(x=Nb_spec,y=Nb_esp)) + 
   geom_bar(stat="identity") + 
-  geom_text(aes(label=paste(Perc,"%",sep="")),vjust=1.6,color="white", size = 8) + 
-  xlab("Number of specimens") + 
+  geom_text(aes(label=paste(Perc,"%",sep="")),vjust=1.6,color="white", size = 4) + 
+  xlab("Number of herbarium specimens") + 
   ylab("Number of taxa") + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"))
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"))
 
 ```
 
@@ -268,22 +284,29 @@ end_fam_nb <- end_esp_anal %>% # calculate nb of species per family within endem
 
 X = 10 # The top X families with most endemic species will be dispayed
 
+ggplot(data=end_fam_nb %>% top_n(X), aes(x=reorder(FAMILY,-`n`), y=`n`)) +
+  geom_bar(stat="identity") + 
+  xlab("Families") +
+  ylab("Number of taxa") +
+  geom_text(aes(label=paste(prop,"%",sep="")), vjust=1.6, color="white", size = 3) +
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
 # fam_low <- end_fam_nb %>% # Calculate nb of families with less than X species
 #   filter (n<X) %>%
 #   summarise ("n" = sum(n)) %>%
-#   add_column("FAMILY" = "Others families") %>% 
+#   add_column("FAMILY" = "Others families") %>%
 #   select (FAMILY,everything()) # order column
-#   
+# 
 # end_fam <- end_fam_nb %>% # Recap tible with families more than X species
-#   filter (n>X) %>% 
-#   rbind(fam_low) %>% 
+#   filter (n>X) %>%
+#   rbind(fam_low) %>%
 #   mutate (prop=round(n/sum(n)*100,1))
-
-ggplot(data=end_fam_nb %>% top_n(X), aes(x=reorder(FAMILY,-`n`), y=`n`)) + 
-  geom_bar(stat="identity") + xlab("Families") + 
-  ylab("Taxa number") + 
-  geom_text(aes(label=paste(prop,"%",sep="")), vjust=1.6, color="white", size = 6) + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+# 
+# ggplot(data=end_fam, aes(x=reorder(FAMILY,-`n`), y=`n`)) + 
+#   geom_bar(stat="identity") + xlab("Families") + 
+#   ylab("Taxa number") + 
+#   geom_text(aes(label=paste(prop,"%",sep="")), vjust=1.6, color="white", size = 4) + 
+#   theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
 
 ```
 
@@ -306,19 +329,19 @@ end_fam_prop <- left_join(end_fam_nb, full_gab_fam_nb, by= "FAMILY") %>%  # calc
   rename ("n_gab" = n.y) %>% 
   mutate (prop_full = round(n_end/n_gab*100,1)) %>% 
   arrange (-prop_full) %>% 
-  filter(n_gab > 5) # filter families with more than 5 species
+  filter(n_gab > 10) # filter families with more than 5 species
 
 
 # Plot - Most represented families in endemics compare to Gabonese flora
 
-X = 15 # The top X families with most proportion of endemic will be dispayed
+X = 10 # The top X families with most proportion of endemic will be dispayed
 ggplot(data=end_fam_prop %>% top_n(X), aes(x=reorder(FAMILY,-prop_full), y=prop_full)) + 
   geom_bar(stat="identity") + 
   xlab("Families") + 
   ylab("Proportion (%)") + 
-  geom_text(aes(label=n_gab), vjust=1.2, color="red", size = 6) +
-  geom_text(aes(label=n_end), vjust=2.8, color="green", size = 6) + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+  geom_text(aes(label=n_gab), vjust=1.2, color="lightblue", size = 4) +
+  geom_text(aes(label=n_end), vjust=2.8, color="green", size = 4) + 
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
 
 ```
 
@@ -333,7 +356,6 @@ end_gen_nb <- end_esp_anal %>%
   mutate (n = as.numeric (n)) %>%
   arrange(-n) %>% 
   mutate (prop=round(n/sum(n)*100,1))
-
 
 # full_gab_gen_nb <- full_gabon %>%
 #   filter (tax_esp != "###") %>% # remove specimens not identified at species level
@@ -367,13 +389,12 @@ X = 10 # The top X most represented genera (in terms of species number) in endem
 #   mutate (prop=round(n/sum(n)*100,1))
 
 
-ggplot(data=end_gen_nb %>% top_n(X), aes(x=reorder(GENUS,-n), y=n)) + 
+ggplot(data=end_gen_nb %>% top_n(X), aes(x=reorder(GENUS,-`n`), y=`n`)) + 
   geom_bar(stat="identity") + 
   xlab("Genera") + 
-  ylab("Taxa number") + 
-  geom_text(aes(label=paste(round(n/sum(n)*100,1),"%",sep="")), vjust=1.6, color="white", size = 6) + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
-
+  ylab("Number of taxa") + 
+  geom_text(aes(label=paste(prop,"%",sep="")), vjust=1.6, color="white", size = 3) + 
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3, face="italic"))
 
 ```
 
@@ -383,19 +404,19 @@ ggplot(data=end_gen_nb %>% top_n(X), aes(x=reorder(GENUS,-n), y=n)) +
 
 #### Species habitus according to Rainbio data
 
-habit_RB<-dataset %>% 
-  filter (!is.na(`Ecological LifeForm`)) %>% 
-  group_by(NameNoAuthors) %>%
-  distinct(`Ecological LifeForm`)
-
-nb_habit_RB <- habit_RB %>% 
-  group_by(NameNoAuthors) %>%
-  summarise(n = n_distinct(`Ecological LifeForm`))
-
-habit_unique <- nb_habit_RB %>% 
-  filter (n == 1) # to select data that have only one type of habitus in Rainbio data
-
-Habitus <- habit_RB [habit_RB$NameNoAuthors %in% habit_unique$NameNoAuthors,]
+# habit_RB<-dataset %>% 
+#   filter (!is.na(`Ecological LifeForm`)) %>% 
+#   group_by(NameNoAuthors) %>%
+#   distinct(`Ecological LifeForm`)
+# 
+# nb_habit_RB <- habit_RB %>% 
+#   group_by(NameNoAuthors) %>%
+#   summarise(n = n_distinct(`Ecological LifeForm`))
+# 
+# habit_unique <- nb_habit_RB %>% 
+#   filter (n == 1) # to select data that have only one type of habitus in Rainbio data
+# 
+# Habitus <- habit_RB [habit_RB$NameNoAuthors %in% habit_unique$NameNoAuthors,]
 
 # write.csv(Habitus,"C:/Users/Administrateur/Desktop/Habitus_species_RB.csv")
 ```
@@ -416,10 +437,10 @@ habit_prop <- end_esp_anal %>%
 ggplot (data=habit_prop, aes(x=reorder(`Habitus 1`,prop), y=prop)) + # reorder allows to sort by a numeric variable
   geom_bar(stat="identity") + 
   coord_flip() + 
-  geom_text(aes(label=paste(prop,"%",sep=" ")), vjust=0.5, hjust=1.2, color="white", size = 10) + 
+  geom_text(aes(label=paste(prop,"%",sep=" ")), vjust=0.5, hjust=1.2, color="white", size = 6) + 
   xlab("Habitus") + 
   ylab("Proportion (%)") + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold")) 
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold")) 
 
 
 ## Representation in a pie chart
@@ -430,12 +451,144 @@ ggplot (data=habit_prop, aes(x=reorder(`Habitus 1`,prop), y=prop)) + # reorder a
 ```
 
 
+## Habitat
+```{r habitat stat, echo = FALSE}
+
+#### Proportion of different habitat in the dataset
+
+habitat_prop <- end_esp_anal %>% 
+  count (Habitat_code) %>% # nb of each habitus
+  mutate(prop= round(n/sum(n)*100,1)) %>%   # % of each habitus
+  mutate(Habitat_code = replace(Habitat_code, Habitat_code == 1, "Forest")) %>% 
+  mutate(Habitat_code = replace(Habitat_code, Habitat_code == 2, "Open area")) %>% 
+  mutate(Habitat_code = replace(Habitat_code, Habitat_code == 3, "Ecotone")) %>% 
+  mutate(Habitat_code = replace(Habitat_code, Habitat_code == 4, "Unknown"))
+
+ggplot (data=habitat_prop, aes(x=reorder(Habitat_code,prop), y=prop)) + # reorder allows to sort by a numeric variable
+  geom_bar(stat="identity") + 
+  coord_flip(ylim = c(0, 110)) + 
+  geom_text(aes(label=paste(prop,"%",sep="")), vjust=0.5, hjust=-0.05, color="black", size = 5.5) + 
+  xlab("Habitat") + 
+  ylab("Proportion (%)") + 
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"))
+```
+
+
+## Altitudinal range
+```{r Altitudinal range, echo = FALSE}
+
+### Using "elevatr" package
+altitude <- as_tibble(get_elev_point(dataset_sf, prj="+proj=longlat +datum=WGS84 +no_defs", src= "aws"))
+
+range(altitude$elevation)
+
+altitude <- altitude %>% 
+  mutate(elevation = replace(elevation, elevation < 0, 0)) # remove negative value for 0 meter elevation
+
+X = 100 # interval of altitudinal representation
+
+# Frequency class altitude according to specimen data
+altitude_class_spec <- vector()
+for (i in seq(from=0, to=850, by=X)){ # count number of different species per altitude
+  altitude_class_spec <- c(altitude_class_spec,nrow(altitude %>% filter(elevation>=i & elevation<i+X) %>% distinct(NameNoAuthors)))
+}
+altitude_class_spec <- enframe (altitude_class_spec) %>% 
+  rename(nb_esp = value) %>% 
+  dplyr::select (nb_esp)
+a <- seq(from=0, to=900, by=X) # create class name
+name <- vector()
+for (i in 1:(length(a)-1)){
+  name <- c(name,paste(a[i],a[i+1],sep="-"))
+}
+name <- enframe (name) %>% 
+  rename(class = value)
+altitude_class_spec <- cbind (altitude_class_spec, name) %>% # combine class name and values 
+  dplyr::select(name, class, nb_esp)
+
+ggplot(data=altitude_class_spec, aes(x=reorder(class, name), y=nb_esp)) + 
+  geom_bar(stat="identity") +
+  xlab("Altitude") +
+  ylab("Number of taxa") +
+  theme(axis.text=element_text(size=10, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
+
+# Frequency class altitude according to putative full range altitude (take into account that species may be present in each class of altitude between its min and max altitude known)
+range_alt <- altitude %>% # calculate altitude max, min and altitudinal amplitude per species
+  group_by(NameNoAuthors) %>% 
+  summarise(min=min(elevation), max=max(elevation)) %>% 
+  mutate (range_diff=max-min)
+
+# altitude_class_full <- sum(range_alt$min<X) # count number of different species per altitude
+# for (i in seq(from=X, to=800, by=X)){ 
+#   altitude_class_full <- c(altitude_class_full, sum((range_alt$min>=i & range_alt$min<i+X), (range_alt$max>=i & range_alt$max<i+X), (range_alt$min<i & range_alt$max>i+X))-sum(range_alt$min>=i & range_alt$max<i+X))
+# }
+# altitude_class_full <- c(altitude_class_full, sum(range_alt$max>i+X)) # caution X+i does not work here for an interval of 100 m (work for X=50)
+# 
+# altitude_class_full <- enframe (altitude_class_full) %>% 
+#   rename(nb_esp = value) %>% 
+#   dplyr::select (nb_esp)
+# a <- seq(from=0, to=900, by=X) # create class name
+# name <- vector()
+# for (i in 1:(length(a)-1)){
+#   name <- c(name,paste(a[i],a[i+1],sep="-"))
+# }
+# name <- enframe (name) %>% 
+#   rename(class = value)
+# altitude_class_full <- cbind (altitude_class_full, name) %>% # combine class name and values
+#   dplyr::select(name, class, nb_esp)
+# 
+# ggplot(data=altitude_class_full, aes(x=reorder(class, name), y=nb_esp)) + 
+#   geom_bar(stat="identity") +
+#   xlab("Altitude") +
+#   ylab("Number of taxa") +
+#   theme(axis.text=element_text(size=10, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
+
+
+# Frequency (number of species) per altitudinal range
+range_class <- vector()
+for (i in seq(from=0, to=850, by=X)){
+  range_class <- c(range_class, sum(range_alt$range_diff>=i & range_alt$range_diff<i+X))
+}
+range_class <- enframe (range_class) %>% 
+  rename(nb_esp = value) %>% 
+  dplyr::select (nb_esp)
+a <- seq(from=0, to=900, by=X) # create class name
+name <- vector()
+for (i in 1:(length(a)-1)){
+  name <- c(name,paste(a[i],a[i+1],sep="-"))
+}
+name <- enframe (name) %>% 
+  rename(class = value)
+range_class <- cbind (range_class, name) %>% # combine class name and values
+  dplyr::select(name, class, nb_esp)
+
+ggplot(data=range_class, aes(x=reorder(class, name), y=nb_esp)) + 
+  geom_bar(stat="identity") +
+  xlab("Altitudinal range") +
+  ylab("Number of taxa") +
+  theme(axis.text=element_text(size=10, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+
+
+# Number of taxa known per alitudinal range
+ALT=500
+sum(range_alt$min<=ALT,range_alt$max<=ALT)-sum(range_alt$min<=ALT & range_alt$max<=ALT) # number of taxa occurring under ALT m elevation
+sum(range_alt$min>=ALT,range_alt$max>=ALT)-sum(range_alt$min>=ALT & range_alt$max>=ALT) # number of taxa occurring above ALT m elevation
+
+```
+
+
+
+
 # Threatened taxa chracteristics
 
 ## IUCN categories
 ```{r threatened stat, echo = FALSE, fig.height = 10, fig.width = 10, fig.cap='Figure 6: Proportion of IUCN categories within endemic taxa'}
 
 #### IUCN categories
+
+end_esp_anal <- end_esp_anal %>% 
+  mutate(IUCN_cat = replace(IUCN_cat, IUCN_cat == "CR (PE)", "CR"))
 
 IUCN_cat_prop <- end_esp_anal %>% 
   count (IUCN_cat) %>% # nb of each habitus
@@ -445,11 +598,11 @@ IUCN_cat_prop$IUCN_cat <- factor (IUCN_cat_prop$IUCN_cat, levels=c("EX","CR","EN
 
 ggplot(data=IUCN_cat_prop, aes(x=IUCN_cat, y=`n`)) + 
   geom_bar(stat="identity") + 
-  xlab("IUCN categries") + 
-  ylab("Species number") + 
-  geom_text(aes(label=paste(prop,"%",sep="")), vjust=1.6, color="white", size = 8) + 
+  xlab("IUCN categories") + 
+  ylab("Number of taxa") + 
+  geom_text(aes(label=paste(prop,"%",sep="")), vjust=-0.3, color="black", size = 4) + 
   geom_vline(xintercept=4.5, linetype="dashed", size= 1) + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"))
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"))
 
 ```
 
@@ -487,9 +640,9 @@ threat_fam <- threat_fam_nb %>% # Recap tible with families more than X species
 ggplot(data=threat_fam, aes(x=reorder(FAMILY,-n), y=n)) + 
   geom_bar(stat="identity") + 
   xlab("Families") + 
-  ylab("Species number") + 
-  geom_text(aes(label=paste(round(n/sum(n)*100,1),"%",sep="")), vjust = 1.6, color="white", size = 6) + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+  ylab("Number of taxa") + 
+  geom_text(aes(label=paste(prop,"%",sep="")), vjust = 1.6, color="white", size = 3.5) + 
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
 
 ```
 
@@ -524,9 +677,9 @@ X = 10 # The top X most represented genera (in terms of species number) in endem
 ggplot(data=threat_gen_nb %>% top_n(X), aes(x=reorder(GENUS,-n), y=n)) + 
   geom_bar(stat="identity") + 
   xlab("Genera") + 
-  ylab("Species number") + 
-  geom_text(aes(label=paste(prop,"%",sep="")), vjust=1.6, color="white", size = 6) + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
+  ylab("Number of taxa") + 
+  geom_text(aes(label=paste(prop,"%",sep="")), vjust=1.6, color="white", size = 4) + 
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14,face="bold"), axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.3))
 
 ```
 
@@ -540,14 +693,46 @@ ggplot(data=threat_gen_nb %>% top_n(X), aes(x=reorder(GENUS,-n), y=n)) +
 
 ggplot(data=end_esp_anal, aes(x= factor(IUCN_cat, levels=c("EX","CR","EN","VU","NT","LC","DD")), fill=`Habitus 1`)) + 
   geom_bar(stat="count") + 
-  xlab("IUCN categries") + 
-  ylab("Species number") + 
+  xlab("IUCN categories") + 
+  ylab("Number of taxa") + 
   geom_vline(xintercept=4.5, linetype="dashed", size= 1) + 
   guides(fill=guide_legend(title="Habitus")) + 
-  theme(axis.text=element_text(size=18, color ="black"), axis.title=element_text(size=18, face="bold"), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=18))
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14, face="bold"), legend.title=element_text(size=14, face="bold"), legend.text=element_text(size=14))
 #stat_fill_labels(position = position_stack(vjust = 50))
 
+habit_prop_threat <- end_esp_anal %>%
+  filter (IUCN_cat == "EX" | IUCN_cat == "CR" | IUCN_cat == "EN" | IUCN_cat == "VU") %>% 
+  count (`Habitus 1`) %>% # nb of each habitus
+  mutate(prop= round(n/sum(n)*100,1))  # % of each habitus
+
 ```
+
+
+## Habitat
+```{r threatened stat per habitat, echo = FALSE}
+
+#### IUCN categories + habitat
+
+# source("D:/WORK/THESIS/RAINBIO_exploration/explodata/Function_label_position_fill.R")
+
+ggplot(data=end_esp_anal, aes(x= factor(IUCN_cat, levels=c("EX","CR","EN","VU","NT","LC","DD")), fill=factor(Habitat_code))) + 
+  geom_bar(stat="count") + 
+  xlab("IUCN categories") + 
+  ylab("Number of taxa") + 
+  geom_vline(xintercept=4.5, linetype="dashed", size= 1) + 
+  guides(fill=guide_legend(title="Habitat")) + 
+  theme(axis.text=element_text(size=14, color ="black"), axis.title=element_text(size=14, face="bold"), legend.title=element_text(size=14, face="bold"), legend.text=element_text(size=14))
+#stat_fill_labels(position = position_stack(vjust = 50))
+
+habit_prop_threat <- end_esp_anal %>%
+  filter (IUCN_cat == "EX" | IUCN_cat == "CR" | IUCN_cat == "EN" | IUCN_cat == "VU") %>% 
+  count (Habitat_code) %>% # nb of each habitus
+  mutate(prop= round(n/sum(n)*100,1))  # % of each habitus
+
+```
+
+
+
 
 
 # Distribution characteristics
@@ -573,6 +758,10 @@ full_gabon_sf_grid <- st_intersection(full_gabon_sf, grid_gab) # add number of g
 nb_spec_grid <- full_gabon_sf_grid %>% 
   count(ID_grid)  # count number of specimen per grid cell
 
+X=100 # number of minimum specimen to consider a cell as well sampled
+grid_high_sample <- nb_spec_grid %>% # grid with more than X specimens
+  filter(n>X)
+
 grid_gab_nb_spec <- left_join(as_tibble(grid_gab), select(as_tibble(nb_spec_grid), ID_grid, n), by = "ID_grid") %>% # integrate nb of specimens per cell to the grid data
   mutate (n = as.numeric(n)) %>% 
   rename (n_spec_full = n) %>% 
@@ -581,16 +770,15 @@ grid_gab_nb_spec <- left_join(as_tibble(grid_gab), select(as_tibble(nb_spec_grid
 # Plot
 # hist(log10(grid_gab_nb_spec$n_spec_full))
 
-sampling_plot <- ggplot() + 
+ggplot() + 
   geom_sf(data=grid_gab_nb_spec$geometry, aes(fill=grid_gab_nb_spec$n_spec_full)) + 
-  scale_fill_gradient(low="lightyellow", high="red", name = "Number") + 
+  scale_fill_gradient(low="lightgreen", high="red", breaks = c(500,1000,1500,2000), limits = c(0,2000), oob = scales::squish, name = "Number", labels = c("500","1000","1500",">2000")) + 
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
-  geom_sf(data=city$geometry, size = 3) + 
-  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  ggtitle ("A.") +
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=16))
+  geom_sf(data=city$geometry, size = 2) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=2, fontface ="bold") + 
+  theme (axis.text=element_text(size=10, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
   
 ```
 
@@ -616,16 +804,57 @@ grid_gab_nb_esp_end <- left_join(as_tibble(grid_gab), select(as_tibble(nb_esp_en
 # Plot
 # hist(grid_gab_nb_esp_end$count_esp_end_grid)
 
-endemic_nb_plot <- ggplot() + 
+ggplot() + 
   geom_sf(data=grid_gab_nb_esp_end$geometry, aes(fill=grid_gab_nb_esp_end$count_esp_end_grid)) + 
-  scale_fill_gradient(low="lightyellow", high="red", name = "Number") + 
+  scale_fill_gradient(low="lightgreen", high="red", name = "Number") + 
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
-  geom_sf(data=city$geometry, size = 3) + 
-  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  ggtitle ("B.") +
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=16))
+  geom_sf(data=city$geometry, size = 2) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=2, fontface ="bold") + 
+  theme (axis.text=element_text(size=10, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
+
+```
+
+
+```{r distrib rare esp end heat map, echo= FALSE}
+
+#### Heat map of number of rare endemic species per cell (taxa present in 5 or less grid cells)
+
+# Define taxa in 5 or less grid cells (= rare taxa)
+rare_end <- dataset_sf_grid %>% 
+  group_by (NameNoAuthors) %>% 
+  summarise (count_grid =  n_distinct(ID_grid)) %>% # count number of grid per taxa
+  filter (count_grid<6)
+
+# Dataset design
+rare_dataset_sf <- dataset_sf_grid[dataset_sf_grid$NameNoAuthors %in% rare_end$NameNoAuthors,] # list of specimen of rare taxa
+
+nb_rare_esp_end_grid <- rare_dataset_sf %>% 
+  group_by(ID_grid) %>% 
+  summarise(count_rare_esp_end_grid =  n_distinct(NameNoAuthors)) # count number of distinct species per grid cell
+
+grid_gab_nb_rare_esp_end <- left_join(as_tibble(grid_gab), dplyr::select(as_tibble(nb_rare_esp_end_grid), ID_grid, count_rare_esp_end_grid), by = "ID_grid") %>% # integrate nb of species per cell to the grid data
+  mutate (count_rare_esp_end_grid = as.numeric(count_rare_esp_end_grid)) %>% 
+  mutate(count_rare_esp_end_grid = replace_na(count_rare_esp_end_grid,0)) %>% 
+  st_as_sf ()
+
+
+# Plot
+# hist(grid_gab_nb_esp_end$count_rare_esp_end_grid)
+
+grid_gab_nb_rare_esp_end <- grid_gab_nb_rare_esp_end %>% 
+  mutate(count_rare_esp_end_grid = replace(count_rare_esp_end_grid, count_rare_esp_end_grid == 0, NA)) #replace 0 by NA for plotting specific color for 0 value
+
+ggplot() + 
+  geom_sf(data=grid_gab_nb_rare_esp_end$geometry, aes(fill=grid_gab_nb_rare_esp_end$count_rare_esp_end_grid)) + 
+  scale_fill_gradient(low="lightgreen", high="red", na.value = "grey", breaks = c(1,10,20,30), name = "Number") + 
+  geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
+  geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
+  geom_sf(data=road$geometry, color = "black", size = 0.6) + 
+  geom_sf(data=city$geometry, size = 2) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=2, fontface ="bold") + 
+  theme (axis.text=element_text(size=10, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
 
 ```
 
@@ -637,7 +866,7 @@ nb_spec_end_grid <- dataset_sf_grid %>% # count number of endemic specimen per g
   count(ID_grid)
  
 
-grid_gab_nb_spec_end <- left_join(as_tibble(grid_gab), select(as_tibble(nb_spec_end_grid), ID_grid, n), by = "ID_grid") %>% # integrate nb of endemic specimen per cell to the grid data
+grid_gab_nb_spec_end <- left_join(as_tibble(grid_gab), dplyr::select(as_tibble(nb_spec_end_grid), ID_grid, n), by = "ID_grid") %>% # integrate nb of endemic specimen per cell to the grid data
   mutate (n = as.numeric(n)) %>% 
   rename (n_spec_end = n) %>% 
   mutate(n_spec_end = replace_na(n_spec_end,0)) %>% 
@@ -654,13 +883,13 @@ grid_gab_prop_spec_end <- left_join(as_tibble(grid_gab_nb_spec_end), as_tibble(g
 
 ggplot() + 
   geom_sf(data=grid_gab_prop_spec_end$geometry.x, aes(fill=grid_gab_prop_spec_end$prop_spec)) + 
-  scale_fill_gradient(low="lightyellow", high="red", breaks = c(0,5,10), limits = c(0,10), oob = scales::squish, name = "%") + # oob = scales::squish # allow to handle values out of limits of defined color gradient (limits) inside the color gradient
+  scale_fill_gradient(low="lightgreen", high="red", breaks = c(0,5,10), limits = c(0,10), oob = scales::squish, name = "%") + # oob = scales::squish # allow to handle values out of limits of defined color gradient (limits) inside the color gradient
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
-  geom_sf(data=city$geometry, size = 3) + 
-  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=18))
+  geom_sf(data=city$geometry, size = 2) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=2, fontface ="bold") + 
+  theme (axis.text=element_text(size=10, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
 
 ```
 
@@ -669,7 +898,7 @@ ggplot() +
 ```{r distrib prop esp end, echo= FALSE}
 
 #### Heat map of proportion of endemic species per cell
-# Number of endemic per gris cell is calculated in the previous chunk
+# Number of endemic per grid cell is calculated in the previous chunk
 
 
 # Integrate data in grid - Proportion of endemic according to number of different species per grid cell
@@ -680,25 +909,26 @@ nb_esp_full_grid <- full_gabon_sf_grid %>%
   group_by(ID_grid) %>% 
   summarise(count_esp_full_grid =  n_distinct(tax_tax)) # count number of distinct species per grid cell
 
-grid_gab_prop_esp_end <- left_join(as_tibble(grid_gab_nb_esp_end), select(as_tibble(nb_esp_full_grid), ID_grid, count_esp_full_grid), by = "ID_grid") %>% # integrate proportion of species per cell to the grid data
+grid_gab_prop_esp_end <- left_join(as_tibble(grid_gab_nb_esp_end), dplyr::select(as_tibble(nb_esp_full_grid), ID_grid, count_esp_full_grid), by = "ID_grid") %>% # integrate proportion of species per cell to the grid data
   mutate (count_esp_full_grid = as.numeric(count_esp_full_grid)) %>%
   mutate (prop_esp = (count_esp_end_grid/count_esp_full_grid)*100) %>% 
   st_as_sf ()
+
+grid_gab_prop_esp_end <- grid_gab_prop_esp_end[grid_gab_prop_esp_end$ID_grid %in% grid_high_sample$ID_grid,] # take only cell with more than X specimens
 
 
 # Plot
 # hist(grid_gab_prop_esp_end$prop_esp)
   
-endemic_prop_plot <- ggplot() + 
+ggplot() + 
   geom_sf(data=grid_gab_prop_esp_end$geometry, aes(fill=grid_gab_prop_esp_end$prop_esp)) + 
-  scale_fill_gradient(low="lightyellow", high="red", breaks = c(0,5,10), limits = c(0,10), oob = scales::squish, name = "%") + # oob = scales::squish # allow to handle values out of limits of defined color gradient (limits) inside the color gradient
+  scale_fill_gradient(low="lightgreen", high="red", name = "%") +
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
   geom_sf(data=city$geometry, size = 3) + 
-  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  ggtitle ("C.") +
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=18))
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=3, fontface ="bold") + 
+  theme (axis.text=element_text(size=10, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
 
 ```
 
@@ -716,7 +946,7 @@ nb_esp_threat_grid <- spec_threat_grid %>%
   group_by(ID_grid) %>% 
   summarise(count_esp_threat_grid =  n_distinct(NameNoAuthors)) # count number of distinct species per grid cell
 
-grid_gab_nb_threat <- left_join(as_tibble(grid_gab), select(as_tibble(nb_esp_threat_grid), ID_grid, count_esp_threat_grid), by = "ID_grid") %>% # integrate nb of species per cell to the grid data
+grid_gab_nb_threat <- left_join(as_tibble(grid_gab), dplyr::select(as_tibble(nb_esp_threat_grid), ID_grid, count_esp_threat_grid), by = "ID_grid") %>% # integrate nb of species per cell to the grid data
   mutate (count_esp_threat_grid = as.numeric(count_esp_threat_grid)) %>% 
   st_as_sf ()
 
@@ -724,15 +954,14 @@ grid_gab_nb_threat <- left_join(as_tibble(grid_gab), select(as_tibble(nb_esp_thr
 # Plot
 # hist(grid_gab_nb_threat$count_esp_threat_grid)
 
-threat_nb_plot <- ggplot() + 
+ggplot() + 
   geom_sf(data=grid_gab_nb_threat$geometry, aes(fill=grid_gab_nb_threat$count_esp_threat_grid)) + 
-  scale_fill_gradient(low="lightyellow", high="red", name = "Number") + 
+  scale_fill_gradient(low="lightgreen", high="red", name = "Number") + 
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + geom_sf(data=city$geometry, size = 3) + 
   geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  ggtitle ("D.") +
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=16))
+  theme (axis.text=element_text(size=10, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
 
 
 ```
@@ -741,7 +970,7 @@ threat_nb_plot <- ggplot() +
 
 ```{r distrib heat map plot, echo= FALSE, fig.height = 20, fig.width = 20, fig.cap='Figure 10: Heat maps. A. Sampling effort in Gabon (Number of specimens); B. Number of endemic taxa; C. Proportion of endemic taxa; D. Number od threatened endemic taxa'}
 
-grid.arrange(sampling_plot, endemic_nb_plot, endemic_prop_plot, threat_nb_plot, ncol=2)
+# grid.arrange(sampling_plot, endemic_nb_plot, endemic_prop_plot, threat_nb_plot, ncol=2)
 
 ```
 
@@ -753,6 +982,8 @@ full_gabon_sf_PN <- as_tibble(st_join(full_gabon_sf, PNgabon))
 
 # Nb of collections and species per PN
 PN_nb_spec <- full_gabon_sf_PN %>%  # nb of collections
+  filter(kind_col!="Plot_data" | is.na(kind_col)) %>% 
+  filter(kind_col!="Sili" | is.na(kind_col)) %>% 
   group_by (nom_ap) %>% 
   summarise (nb_spec = n())
 
@@ -765,7 +996,7 @@ PN_nb_esp <- full_gabon_sf_PN %>% # nb of species
 # Endemic species
 dataset_sf_PN <- as_tibble(st_join(dataset_sf, PNgabon))
 
-spec_PN <- dataset_sf_PN %>% # spécimen in National Parks
+spec_PN <- dataset_sf_PN %>% # specimen in National Parks
   filter (!is.na(nom_ap))
 
 esp_PN <- spec_PN %>% # species with at least 1 specimen in National Parks
@@ -818,6 +1049,26 @@ esp_threat_log <- dataset_sf_log[dataset_sf_log$NameNoAuthors %in% threat_esp$SP
 ```
 
 
+```{r distrib within mining, echo= FALSE}
+
+dataset_sf_mine <- as_tibble(st_join(dataset_sf, mining_gabon))
+
+# Endemic species
+spec_mine <- dataset_sf_mine %>% # specimen present in logging concession
+  filter (!is.na(FID_Permis))
+
+esp_mine <- spec_mine %>% # species with at least 1 specimen in logging concessions
+  distinct(NameNoAuthors) %>% 
+  mutate (mining = 1)
+
+
+# Threatened species
+esp_threat_mine <- dataset_sf_mine[dataset_sf_mine$NameNoAuthors %in% threat_esp$SPECIES,] %>% # threatened species with at least 1 specimen within loggin concessions
+  filter (!is.na(FID_Permis)) %>% 
+  distinct(NameNoAuthors)
+
+```
+
 
 # Statistics
 
@@ -825,20 +1076,20 @@ esp_threat_log <- dataset_sf_log[dataset_sf_log$NameNoAuthors %in% threat_esp$SP
 
 #### Curve of species accumulation at the Gabon scale
 
-grid_gab_nb_spec_10 <- grid_gab_nb_spec %>% # remove cell with less than 10 specimens
-  filter(n_spec_full>10)
-
-grid_gab_prop_spec_end_10 <- left_join(as_tibble(grid_gab_nb_spec_end), as_tibble(grid_gab_nb_spec_10), by = "ID_grid") %>% # integrate proportion of endemic specimen per cell to the grid data
-  mutate (prop_spec = (n_spec_end/n_spec_full)*100) %>% 
-  st_as_sf ()
-
-cor_esp_spec_end <- left_join(as_tibble(select(grid_gab_prop_spec_end_10, ID_grid, prop_spec)), as_tibble(select(grid_gab_prop_esp_end, ID_grid, prop_esp), by = "ID_grid"))
-
-cor_lm <- lm(cor_esp_spec_end$prop_esp ~ 0 + cor_esp_spec_end$prop_spec) # "0 + x" allow to put regression line through origin, which is an expectation here = 0% of endemic specimen within the cell shoulb be 0% of endemic species within the cell
-
-# Plot 
-plot(cor_esp_spec_end$prop_esp ~ cor_esp_spec_end$prop_spec, cor_esp_spec_end)
-abline(cor_lm)
+# grid_gab_nb_spec_10 <- grid_gab_nb_spec %>% # remove cell with less than 10 specimens
+#   filter(n_spec_full>10)
+# 
+# grid_gab_prop_spec_end_10 <- left_join(as_tibble(grid_gab_nb_spec_end), as_tibble(grid_gab_nb_spec_10), by = "ID_grid") %>% # integrate proportion of endemic specimen per cell to the grid data
+#   mutate (prop_spec = (n_spec_end/n_spec_full)*100) %>% 
+#   st_as_sf ()
+# 
+# cor_esp_spec_end <- left_join(as_tibble(select(grid_gab_prop_spec_end_10, ID_grid, prop_spec)), as_tibble(select(grid_gab_prop_esp_end, ID_grid, prop_esp), by = "ID_grid"))
+# 
+# cor_lm <- lm(cor_esp_spec_end$prop_esp ~ 0 + cor_esp_spec_end$prop_spec) # "0 + x" allow to put regression line through origin, which is an expectation here = 0% of endemic specimen within the cell shoulb be 0% of endemic species within the cell
+# 
+# # Plot 
+# plot(cor_esp_spec_end$prop_esp ~ cor_esp_spec_end$prop_spec, cor_esp_spec_end)
+# abline(cor_lm)
 
 ```
 
@@ -848,11 +1099,11 @@ abline(cor_lm)
 
 #### Extrapolation - Calcul estimator of total species richness (Chao, Walther and Moore (2005))
 
-K = round(seq(1, nrow(full_gabon %>% filter (tax_esp != "###") %>% select (tax_tax)), length.out = 1000), 0)
+K = round(seq(1, nrow(full_gabon %>% filter (tax_esp != "###") %>% dplyr::select (tax_tax)), length.out = 1000), 0)
 chao2 <- vector()
 
 for (i in 1 : length (K)){
-subsamp <- sample_n(full_gabon %>% filter (tax_esp != "###") %>% select (tax_tax), size = K[i], replace = FALSE)
+subsamp <- sample_n(full_gabon %>% filter (tax_esp != "###") %>% dplyr::select (tax_tax), size = K[i], replace = FALSE)
 subsamp_count <- subsamp %>%
   count(tax_tax) %>% 
   rename (nb = n)
@@ -861,6 +1112,8 @@ cat(i, " ")
 }
 
 ## ---> result: no real plateau of accumulation, show that Gabon is not well collected; inflexion of curve appears for n(specimen) is ca. 30000! so need 30000 specimen to make a quite good estimation of total richness, which is for a grid cell very too much !  So we can't use extrapolation to calculate total richness per grid cell and use % of endemism to calculate estimated number of endemic species per grid cell.
+
+
 
 
 #### Interpolation - resampling per grid cell : use to compare grid cell one to another to highlight grid cell with higher proportion of endemism
@@ -874,29 +1127,34 @@ cat(i, " ")
 #   arrange (NameNoAuthors)
 
 
-a <- full_gabon_sf_grid %>% # nb of specimens identified at species level per cell
-  filter (tax_esp != "###") %>% 
-  count(ID_grid)
+# a <- full_gabon_sf_grid %>% # nb of specimens identified at species level per cell
+#   filter (tax_esp != "###") %>% 
+#   count(ID_grid)
 
-spec_grid <- left_join(as_tibble(grid_gab), select(as_tibble(a), ID_grid, n), by = "ID_grid") %>% # integrate nb of specimens per cell to the grid data
-  mutate (n = as.numeric(n)) %>% 
-  rename (n_spec_full = n)
+# nb_esp_full_grid <- full_gabon_sf_grid %>% 
+#   filter (tax_esp != "###") %>% 
+#   group_by(ID_grid) %>% 
+#   summarise(count_esp_full_grid =  n_distinct(tax_tax))
+#esp_grid <- left_join(as_tibble(grid_gab), dplyr::select(as_tibble(nb_esp_full_grid), ID_grid, count_esp_full_grid), by = "ID_grid") # integrate nb of species per cell to the grid data
 
-k = 50 # value of minimal number of specimen in a grid cell to compute resampling
-rep = 100
+spec_grid <- left_join(as_tibble(grid_gab), nb_spec_grid, by = "ID_grid") # integrate nb of specimen per cell to the grid data
+
+k = 100 # number of individual sample randomly
+l = 200 # value of minimal number of specimen in a grid cell to compute resampling
+rep = 100 # number of times we repeat the resampling procedure
 resampling_result <- grid_gab
-
 
 for (i in 1 : nrow(grid_gab)) {
 tot <- vector()
 end <- vector()
 threat <- vector()
-  if (!is.na (spec_grid$n_spec_full[i]) & spec_grid$n_spec_full[i]>k) {
+  if (!is.na (spec_grid$n[i]) & spec_grid$n[i]>l) {
     for (j in 1 : rep){
-      subsamp <- sample(pull(as_tibble(full_gabon_sf_grid) %>% filter (ID_grid == i) %>% filter (tax_esp != "###") %>% select (tax_tax)), size = k, replace = FALSE) # pull allows to make a vector from a column tibble
+      subsamp <- vector()
+      subsamp <- sample(pull(as_tibble(full_gabon_sf_grid) %>% filter (ID_grid == i) %>% filter (tax_esp != "###") %>% dplyr::select (tax_tax)), size = k, replace = FALSE) # pull allows to make a vector from a column tibble
       tot[j] <- length(unique(subsamp)) # total richness
-      subsamp <- enframe(subsamp) %>% rename (NameNoAuthors = value) # enframe is the new equivalent of as_tibble for a vector
-      end[j] <- nrow(unique(subsamp[subsamp$NameNoAuthors %in% end_esp_all$SPECIES,])) # endemism richness
+      subsamp <- enframe(subsamp) %>% rename (NameNoAuthors = value) # enframe is the equivalent of as_tibble for a vector
+      end[j] <- nrow(unique(subsamp[subsamp$NameNoAuthors %in% end_esp_all$SPECIES,])) # endemic richness
       threat[j] <- nrow(unique(subsamp[subsamp$NameNoAuthors %in% threat_esp$SPECIES,])) # threatened richness
     }
   tot <- sort (tot)
@@ -915,8 +1173,15 @@ threat <- vector()
 cat(i, " ")
 }
 
-resampling_result <- resampling_result %>% 
+resampling_result <- resampling_result %>% # recapitulative data
   rename (mean_tot = V3, min_conf_tot = V4, max_conf_tot = V5, mean_end = V6, min_conf_end = V7, max_conf_end = V8, mean_threat = V9, min_conf_threat = V10, max_conf_threat = V11)
+
+resampling_result <- resampling_result %>% # remove cells without data for mapping
+  filter(!is.na(mean_tot))
+
+resampling_result <- resampling_result %>% 
+  mutate(mean_end = replace(mean_end, mean_end == 0, NA)) %>% 
+  mutate(mean_threat = replace(mean_threat, mean_threat == 0, NA)) #replace 0 by NA for plotting specific color for 0 value
 
 ```
 
@@ -930,9 +1195,9 @@ ggplot() +
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
-  geom_sf(data=city$geometry, size = 3) + 
-  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=16))
+  geom_sf(data=city$geometry, size = 2) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=2, fontface ="bold") + 
+  theme (axis.text=element_text(size=12, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
 
 
 ```
@@ -943,13 +1208,13 @@ ggplot() +
 
 ggplot() + 
   geom_sf(data=resampling_result$geometry, aes(fill=resampling_result$mean_end)) + 
-  scale_fill_gradient(low="green", high="red", name = "Number") + 
+  scale_fill_gradient(low="lightgreen", high="red", na.value = "grey", name = "Number") + 
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
-  geom_sf(data=city$geometry, size = 3) + 
-  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=16))
+  geom_sf(data=city$geometry, size = 2) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=2, fontface ="bold") + 
+  theme (axis.text=element_text(size=12, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
 
 
 ```
@@ -960,13 +1225,13 @@ ggplot() +
 
 ggplot() + 
   geom_sf(data=resampling_result$geometry, aes(fill=resampling_result$mean_threat)) + 
-  scale_fill_gradient(low="green", high="red", name = "Number") + 
+  scale_fill_gradient(low="lightgreen", high="red", na.value = "grey", name = "Number") + 
   geom_sf(data=gabon$geometry, color = "black", size = 1.5, fill = NA) + 
   geom_sf(data=PNgabon$geometry, color = "#006600", size =1, fill = NA) + 
   geom_sf(data=road$geometry, color = "black", size = 0.6) + 
-  geom_sf(data=city$geometry, size = 3) + 
-  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=4, fontface ="bold") + 
-  theme (plot.title = element_text(size = 24, face = "bold"), axis.text=element_text(size=18, color ="black"), axis.title=element_blank(), legend.title=element_text(size=20, face="bold"), legend.text=element_text(size=16))
+  geom_sf(data=city$geometry, size = 2) + 
+  geom_sf_text(data=city$geometry, aes(label = city$VILLE), nudge_y = 0.2, size=2, fontface ="bold") + 
+  theme (axis.text=element_text(size=12, color ="black"), axis.title=element_blank(), legend.title=element_text(size=12, face="bold"), legend.text=element_text(size=12))
 
 
 ```
@@ -996,26 +1261,27 @@ S = length (unique(dataset$NameNoAuthors))
 
 ## Strict and likely sub-endemic species
 
-end_esp_all <- end_esp_all %>%
+end_esp_synthesis <- end_esp_all %>%
   mutate (endemism_status= if_else(END_BDDEndemix==1, 1, if_else(END_BDDEndemix==9, 2, 3))) %>% 
-  select (endemism_status, FAMILY, SPECIES, IUCN_cat) %>%
+  dplyr::select (endemism_status, FAMILY, SPECIES, UICN_worst_cat, IUCN_cat) %>%
   left_join(nb_PN_esp, by= c("SPECIES" = "NameNoAuthors")) %>% # add nb of different PN per taxa
   left_join(esp_log, by= c("SPECIES" = "NameNoAuthors")) %>% # add if species present in logging concession (1)
   mutate (logging = ifelse ((endemism_status!=3 & is.na(logging)),0,logging)) %>% 
   arrange (FAMILY, SPECIES)
 
+# write.csv(end_esp_synthesis, file = "Table synthesis.csv")
 
 
 # Table
 options(knitr.kable.NA = '')
-kable(end_esp_all, col.names = c("Endemism", "Family", "Taxon", "IUCN", "PN", "Logging"), caption = "Table 1: Endemic species of Gabon with preliminary conservation status. Endemism: 1=Strict endemic; 2=Likely sub-endemic; 3=Endemic within checklist of Gabon, taxon which is under or need taxonomic revision. IUCN: IUCN red list category. PN: number of different National Parks where the taxon is present. Logging: Taxon present (1) or not (0) in logging concessions")
+kable(end_esp_synthesis, col.names = c("Endemism", "Family", "Taxon", "APCA","FPCA", "PN", "Logging"), caption = "Table 1: Endemic species of Gabon with preliminary conservation status. Endemism: 1=Strict endemic; 2=Likely sub-endemic; 3=Endemic within checklist of Gabon, taxon which is under or need taxonomic revision. PCA: final preliminary conservation status category . PN: number of different National Parks where the taxon is present. Logging: Taxon present (1) or not (0) in logging concessions")
 
 
 # Mapview
 
 data_mapview <- dataset_sf %>% 
   left_join(select (species, SPECIES, IUCN_cat), by = c("NameNoAuthors" = "SPECIES")) %>% 
-  select (FamilyName, NameNoAuthors, IUCN_cat)
+  dplyr::select (FamilyName, NameNoAuthors, IUCN_cat)
 
 mapview <- mapview (data_mapview, zcol = "IUCN_cat")
 
