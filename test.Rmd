@@ -37,6 +37,9 @@ saveRDS(token, file = "token.rds")
 drop_download("gilles_nico_tex/Selection_specimen_GAB_end_28032019.csv", overwrite = TRUE)
 drop_download("gilles_nico_tex/Gabon_Endemics_species_28032019.csv", overwrite = TRUE)
 drop_download("gilles_nico_tex/Gabon_herbiers_full_georef_2018.csv", overwrite = TRUE)
+drop_download("gilles_nico_tex/Specimens_georeferenced_all_TSBC_infomap_bioregions(2).geojson", overwrite = TRUE)
+
+
 ```
 
 ```{r data load, include=FALSE}
@@ -1350,7 +1353,7 @@ problems(dataset) %>%
 ```{r load shapefiles & sf object, include=FALSE}
 
 ## Infomap biogreions
-grid <- geojson_sf("Shapefiles/Specimens_georeferenced_all_TSBC_infomap_bioregions(2).geojson")
+grid <- geojsonsf::geojson_sf("Specimens_georeferenced_all_TSBC_infomap_bioregions(2).geojson")
 plot (grid$geometry)
 
 df_union_cast <- st_cast(grid, "POLYGON") # split multipolygons in multiple polygons
@@ -1360,7 +1363,7 @@ df_union_cast <- df_union_cast %>% # add a number to each polygon
   add_column(ID_grid=seq(1, nrow(.)))
 
 colourCount = length(unique(grid$bioregion)) # mini function to get as much color as number of bioregions
-getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+getPalette = colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))
 
 ggplot() + # plot bioregions
   geom_sf(data=df_union_cast$geometry, aes(fill=as.factor(df_union_cast$bioregion))) +
@@ -1402,8 +1405,72 @@ ID_grid_dups <- dataset_bioreg[dataset_bioreg$ID %in% ID_spec_dups,] %>%
 ```{r correction overlapping}
 
 overlap <- st_within(df_union_cast,df_union_cast)
-a <- overlap 
 
-unlist(lapply(a,function (x) length(x)))
+nbe_elements <- unlist(lapply(overlap, function (x) length(x)))
+
+j <- 2
+ids_cell <- unique(df_union_cast$ID_grid)
+cropped_cells_list <- list()
+for (j in 1:length(ids_cell)) {
+  
+  df_union_cast_selected <- 
+    df_union_cast %>% 
+    dplyr::filter(ID_grid == ids_cell[j])
+  
+  ## which list element contain the cell
+  which_element_contain <- unlist(lapply(overlap, function (x) any(x==ids_cell[j])))
+  ## if any cell that contain the cell has more than 1
+  if(any(nbe_elements[which_element_contain]>1)) {
+    ids_all <- unique(unlist(overlap[which_element_contain]))
+    ids_all <- ids_all[ids_all!=ids_cell[j]] ## exclude selected cell
+    
+    df_union_cast_within <- 
+      df_union_cast %>% 
+      dplyr::filter(ID_grid %in% ids_all)
+    df_union_cast_within_union <- 
+      st_union(df_union_cast_within)
+    
+    intersect <- 
+      st_intersection(df_union_cast_within_union, df_union_cast_selected) # take the intersection
+    
+    difference <- 
+      st_difference(df_union_cast_selected, intersect) ## take the difference
+    
+    if(nrow(difference)>0) { ## if difference exist
+
+    
+    df_union_cast_modif <- df_union_cast_selected
+    df_union_cast_modif$geometry <- difference$geometry ## replace original by cropped cell
+    
+    plot(df_union_cast_selected$geometry)
+    plot(intersect, add=T, col="green")
+    plot(df_union_cast_modif$geometry, add=T, col="red")
+    
+    cropped_cells_list[[j]] <-
+      df_union_cast_modif
+    }else{
+          cropped_cells_list[[j]] <-
+      df_union_cast_selected
+    }
+  }else{
+    cropped_cells_list[[j]] <-
+      df_union_cast_selected
+  }
+  
+}
+
+cropped_shp <- 
+  do.call(rbind, cropped_cells_list)
+
+ggplot() + # plot bioregions
+  geom_sf(data=cropped_shp$geometry, aes(fill=as.factor(cropped_shp$bioregion))) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme(legend.position="bottom") +
+  guides(fill=guide_legend(nrow=2)) +
+  labs(fill = "Bioregions") +
+  geom_sf_text(data=cropped_shp$geometry, aes(label = cropped_shp$ID_grid), size=3)
+
+
+
 
 ```
