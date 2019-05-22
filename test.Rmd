@@ -1423,35 +1423,43 @@ for (j in 1:length(ids_cell)) {
   if(any(nbe_elements[which_element_contain]>1)) {
     ids_all <- unique(unlist(overlap[which_element_contain]))
     ids_all <- ids_all[ids_all!=ids_cell[j]] ## exclude selected cell
+    ids_all <- ids_all[ids_all>ids_cell[j]]
     
-    df_union_cast_within <- 
-      df_union_cast %>% 
-      dplyr::filter(ID_grid %in% ids_all)
-    df_union_cast_within_union <- 
-      st_union(df_union_cast_within)
-    
-    intersect <- 
-      st_intersection(df_union_cast_within_union, df_union_cast_selected) # take the intersection
-    
-    difference <- 
-      st_difference(df_union_cast_selected, intersect) ## take the difference
-    
-    if(nrow(difference)>0) { ## if difference exist
-
-    
-    df_union_cast_modif <- df_union_cast_selected
-    df_union_cast_modif$geometry <- difference$geometry ## replace original by cropped cell
-    
-    plot(df_union_cast_selected$geometry)
-    plot(intersect, add=T, col="green")
-    plot(df_union_cast_modif$geometry, add=T, col="red")
-    
-    cropped_cells_list[[j]] <-
-      df_union_cast_modif
+    if(length(ids_all)>0) {
+          df_union_cast_within <- 
+            df_union_cast %>% 
+            dplyr::filter(ID_grid %in% ids_all)
+          
+          df_union_cast_within_union <- 
+            st_union(df_union_cast_within)
+          intersect <- 
+            st_intersection(df_union_cast_within_union, df_union_cast_selected) # take the intersection
+          
+          difference <- 
+            st_difference(df_union_cast_selected, intersect) ## take the difference
+          
+          
+          if(nrow(difference)>0) { ## if difference exist
+            df_union_cast_modif <- df_union_cast_selected
+            df_union_cast_modif$geometry <- difference$geometry ## replace original by cropped cell
+            
+            plot(df_union_cast_selected$geometry)
+            plot(intersect, add=T, col="green")
+            plot(df_union_cast_modif$geometry, add=T, col="red")
+            cropped_cells_list[[j]] <-
+              df_union_cast_modif
+            }else{
+              cropped_cells_list[[j]] <-
+                df_union_cast_selected
+            }
+          
     }else{
           cropped_cells_list[[j]] <-
-      df_union_cast_selected
+            df_union_cast_selected
     }
+    
+
+    
   }else{
     cropped_cells_list[[j]] <-
       df_union_cast_selected
@@ -1471,6 +1479,6 @@ ggplot() + # plot bioregions
   geom_sf_text(data=cropped_shp$geometry, aes(label = cropped_shp$ID_grid), size=3)
 
 
-
+overlap <- st_within(cropped_shp, cropped_shp)
 
 ```
