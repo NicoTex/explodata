@@ -1382,35 +1382,15 @@ dataset_sf <- st_as_sf(x = dataset, coords = c("LongitudeDecimal", "LatitudeDeci
 ```
 
 
-
-```{r attribute data to bioregions}
-
-dataset_bioreg <- st_intersection(dataset_sf,df_union_cast) # specimen with bioregions attribution
-
-dataset_bioreg <- dataset_bioreg %>% 
-  mutate(ID_grid=as.numeric(ID_grid))
-
-
-ID_spec_dups <- unique(dataset_bioreg$ID[duplicated(dataset_bioreg$ID)])
-
-ID_grid_dups <- dataset_bioreg[dataset_bioreg$ID %in% ID_spec_dups,] %>%
-  as.data.frame() %>% 
-  distinct (ID_grid)
-
-
-```
-
-
-
 ```{r correction overlapping}
 
 overlap <- st_within(df_union_cast,df_union_cast)
 
 nbe_elements <- unlist(lapply(overlap, function (x) length(x))) #  get number of integer (=in how many different cells the cell is inserted) found for each grid cell
 
-j <- 42
 ids_cell <- unique(df_union_cast$ID_grid)
-cropped_cells_list <- list()
+
+
 for (j in 1:length(ids_cell)) {
   
   df_union_cast_selected <- df_union_cast %>% # select the cell
@@ -1419,56 +1399,52 @@ for (j in 1:length(ids_cell)) {
   which_element_contain <- unlist(lapply(overlap, function (x) any(x==ids_cell[j]))) # which list element contain the cell
   
   if(any(nbe_elements[which_element_contain]>1)) { # if any cell that contain the cell has more than 1
-    ids_all <- unique(unlist(overlap[which_element_contain])) # select cells containing (=include in) the cell
+    ids_all <- unique(unlist(overlap[which_element_contain])) # select cells containing (=include with) the cell
     ids_all <- ids_all[ids_all!=ids_cell[j]] # exclude selected cell
-    #ids_all <- ids_all[ids_all>ids_cell[j]]
-    if(any(st_area(df_union_cast[df_union_cast$ID_grid==ids_all,])<st_area(df_union_cast_selected)))
-    
-    if(length(ids_all)>0) {
-          df_union_cast_within <- df_union_cast %>% # select polygons containing (=include in) the cell
+
+    if(any(st_area(df_union_cast[df_union_cast$ID_grid %in% ids_all,])<st_area(df_union_cast_selected))){ # if selected cell area is greater than others one(s) include with
+      
+          df_union_cast_within <- df_union_cast %>% # select polygons containing (=include with) the cell
             dplyr::filter(ID_grid %in% ids_all)
           
           df_union_cast_within_union <- st_union(df_union_cast_within) # create a multipolgon from all previously selected polygons
           
-          intersect <- st_intersection(df_union_cast_within_union, df_union_cast_selected) # take the intersection
+          difference <- st_difference(df_union_cast_selected, df_union_cast_within_union) # take the difference
           
-          difference <- st_difference(df_union_cast_selected, intersect) ## take the difference
-          #difference <- st_difference(df_union_cast_selected, df_union_cast_within_union)
-          
-          
-          if(nrow(difference)>0) { # if difference exist
-            df_union_cast_modif <- df_union_cast_selected
-            df_union_cast_modif$geometry <- difference$geometry # replace original by cropped cell
-            
-            # plot(df_union_cast_selected$geometry)
-            # plot(intersect, add=T, col="green")
-            # plot(df_union_cast_modif$geometry, add=T, col="red")
-            df_union_cast[j,]$geometry <- df_union_cast_modif$geometry
-            
-            }else{
-              df_union_cast[j,]$geometry <- df_union_cast_selected$geometry
-            }
-          
-    }else{
-          df_union_cast[j,]$geometry <- df_union_cast_selected$geometry
+          df_union_cast[j,]$geometry <- difference$geometry # attribute the new geometry to the polygon
     }
-   
-  }else{
-    df_union_cast[j,]$geometry <- df_union_cast_selected$geometry
   }
 }
 
-cropped_shp <- do.call(rbind, cropped_cells_list) # allow to rbind different elements of a list (do.call allow to execute a function on a list)
+
+overlap <- st_within(df_union_cast,df_union_cast) # to check if overlap remains
 
 ggplot() + # plot bioregions
-  geom_sf(data=cropped_shp$geometry, aes(fill=as.factor(cropped_shp$bioregion))) +
+  geom_sf(data=df_union_cast$geometry, aes(fill=as.factor(df_union_cast$bioregion))) +
   scale_fill_manual(values = getPalette(colourCount)) +
   theme(legend.position="bottom") +
   guides(fill=guide_legend(nrow=2)) +
   labs(fill = "Bioregions") +
-  geom_sf_text(data=cropped_shp$geometry, aes(label = cropped_shp$ID_grid), size=3)
+  geom_sf_text(data=df_union_cast$geometry, aes(label = df_union_cast$ID_grid), size=1.8)
 
 
-overlap <- st_within(cropped_shp, cropped_shp)
+```
+
+
+
+```{r attribute data to bioregions}
+
+bioregions_union <- df_union_cast %>% # group polygons from a same bioregion to a unique multipolygon
+  group_by(bioregion) %>% 
+  summarise()
+
+dataset_bioreg <- st_intersection(dataset_sf,bioregions_union) # specimen with bioregions attribution
+
+sum(dataset_sf$ID %in% dataset_bioreg$ID)/nrow(dataset_sf)*100 # % of specimens falling into a bioregion
+
+# Specimens at the border of 2 different bioregions and that can not be attributed to one specific bioregion
+ID_spec_dups <- unique(dataset_bioreg$ID[duplicated(dataset_bioreg$ID)]) # which ID specimens are duplicated by st_intersection (= falling at the border of two different bioregions)
+
+dataset_bioreg <- dataset_bioreg[!(dataset_bioreg$ID %in% ID_spec_dups),] # dataset with only specimens falling into specific bioregion
 
 ```
